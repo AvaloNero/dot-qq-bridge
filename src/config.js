@@ -15,6 +15,8 @@ export function readConfig(env = process.env) {
     authMode: mode, devToken: env.DEV_BEARER_TOKEN || '', principal: env.MCP_OWNER_SUBJECT || '',
     qqAppId: env.QQ_APP_ID || '', qqSecret: env.QQ_BOT_SECRET || '', ownerOpenid: env.QQ_OWNER_OPENID || '',
     qqApiProfile: env.QQ_API_PROFILE || 'documented',
+    qqTransport: env.QQ_TRANSPORT || 'webhook',
+    gatewayHosts: (env.QQ_GATEWAY_ALLOWED_HOSTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean),
     publicOrigin: env.PUBLIC_ORIGIN || '', oauthIssuer: env.OAUTH_ISSUER || '', oauthJwksUrl: env.OAUTH_JWKS_URL || '',
     oauthAudience: env.OAUTH_AUDIENCE || '', oauthScope: env.OAUTH_REQUIRED_SCOPE || 'qq:bridge',
     callbackHosts: (env.MCP_CALLBACK_ALLOWED_HOSTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean),
@@ -40,6 +42,13 @@ export function readConfig(env = process.env) {
   }
   if (config.ownerOpenid && !/^[a-zA-Z0-9_-]{1,128}$/.test(config.ownerOpenid)) throw new Error('Invalid QQ_OWNER_OPENID');
   if (!['documented', 'tencent-sdk', 'tencent-sandbox'].includes(config.qqApiProfile)) throw new Error('Invalid QQ_API_PROFILE');
+  if (!['webhook', 'gateway'].includes(config.qqTransport)) throw new Error('Invalid QQ_TRANSPORT');
+  if (config.gatewayHosts.some(host => !validHostname(host))) throw new Error('QQ_GATEWAY_ALLOWED_HOSTS requires exact DNS hostnames');
+  if (!config.gatewayHosts.length) config.gatewayHosts = [config.qqApiProfile === 'tencent-sandbox' ? 'sandbox.api.sgroup.qq.com' :
+    config.qqApiProfile === 'tencent-sdk' ? 'api.sgroup.qq.com' : 'api.bot.qq.com'];
+  if (config.qqTransport === 'gateway' && (mode === 'deny' || !config.qqAppId || !config.qqSecret || !config.ownerOpenid || !config.principal)) {
+    throw new Error('QQ Gateway requires explicit AppID, secret, one owner openid and an authenticated MCP principal before network access');
+  }
   if (config.callbackHosts.some(host => !validHostname(host))) throw new Error('MCP_CALLBACK_ALLOWED_HOSTS requires exact DNS hostnames without URLs, wildcards or IP addresses');
   if (!/^[a-zA-Z0-9:_-]{1,128}$/.test(config.oauthScope)) throw new Error('Invalid OAUTH_REQUIRED_SCOPE');
   return Object.freeze(config);

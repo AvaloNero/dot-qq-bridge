@@ -10,9 +10,12 @@
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage test/*.test.js",
     "simulate": "node scripts/simulate.js",
+    "simulate:gateway": "node scripts/simulate-gateway.js",
+    "connect:qq": "node scripts/connect-qq.js",
     "status": "node --env-file-if-exists=.env scripts/status.js",
     "verify:qq": "node --env-file-if-exists=.env scripts/verify-qq-capture.js",
     "check": "node scripts/check.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": { "ws": "8.21.0" }
 }

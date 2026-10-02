@@ -4,7 +4,6 @@ import { Bridge } from './bridge.js';
 import { BridgeError, equal, object, rpcResult } from './common.js';
 import { createAuthenticator } from './auth.js';
 import { makePublicRequester } from './network.js';
-import { incomingMessage } from './qq.js';
 import { qqChallenge, qqVerify } from './signatures.js';
 
 const VERSION = '2026-07-28';
@@ -68,7 +67,9 @@ export function validateMcp(request, headers) {
 
 export function createApp(config, { clock = Date.now, send = makePublicRequester(), worker = true } = {}) {
   const bridge = new Bridge(config, { clock, send }), authenticate = createAuthenticator(config, send, clock);
-  let interval, lastTick = Promise.resolve(), stopping = false, lastPrune = 0;
+  let interval, lastTick = Promise.resolve(), stopping = false, lastPrune = 0, gateway;
+  const ready = () => bridge.ready() && !!bridge.store.activeSubscription(clock()) &&
+    (config.qqTransport === 'webhook' || gateway?.status().connected === true);
   const server = http.createServer(async (req, res) => {
     let rpcId, isMcp = false;
     try {
@@ -77,10 +78,10 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
       const hosts = ['127.0.0.1', 'localhost', '[::1]', config.host];
       if (config.publicOrigin) hosts.push(new URL(config.publicOrigin).hostname);
       if (!hosts.includes(hostname)) throw new BridgeError('Invalid Host', { status: 403 });
-      if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, { status: 'ok', bridge_ready: bridge.ready() && !!bridge.store.activeSubscription(clock()) });
+      if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, { status: 'ok', bridge_ready: ready() });
       if (req.method === 'GET' && url.pathname === '/readyz') {
-        const ready = bridge.ready() && !!bridge.store.activeSubscription(clock());
-        return json(res, ready ? 200 : 503, { ready });
+        const available = ready();
+        return json(res, available ? 200 : 503, { ready: available });
       }
       if (req.method === 'GET' && ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'].includes(url.pathname)) {
         if (config.authMode !== 'oauth') return json(res, 404, { error: 'OAuth is not configured' });
@@ -104,6 +105,7 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
         return json(res, 200, rpcResult(request.id, result));
       }
       if (url.pathname === '/qq/webhook') {
+        if (config.qqTransport !== 'webhook') return json(res, 404, { error: 'Webhook transport is disabled' });
         if (req.method !== 'POST') return json(res, 405, { error: 'POST required' }, { Allow: 'POST' });
         if (!config.qqAppId || !config.qqSecret) throw new BridgeError('QQ callback is not configured', { status: 503 });
         if (req.headers['x-bot-appid'] !== undefined && !equal(req.headers['x-bot-appid'], config.qqAppId)) throw new BridgeError('Wrong QQ AppID', { status: 401 });
@@ -120,8 +122,7 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
           return json(res, 200, { plain_token: payload.d.plain_token, signature: qqChallenge(config.qqSecret, payload.d.plain_token, payload.d.event_ts) });
         }
         const replayId = qqVerify(config.qqSecret, req.headers, body, clock(), config.signatureSkewSeconds);
-        const message = incomingMessage(payload, config, clock());
-        if (message && !bridge.store.get('SELECT id FROM messages WHERE outbound_id=?', message.id)) bridge.store.ingest(message, replayId, clock());
+        bridge.acceptQq(payload, replayId);
         return json(res, 200, { op: 12, d: 0 });
       }
       return json(res, 404, { error: 'Not found' });
@@ -142,6 +143,7 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
     }).catch(() => { process.stderr.write('Worker failure; inspect durable queue using the operator runbook.\n'); });
   }
   return { server, bridge,
+    attachGateway(adapter) { if (gateway) throw new Error('Gateway is already attached'); gateway = adapter; },
     async listen(port = config.port, host = config.host) {
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
       if (worker) { interval = setInterval(runWorker, config.workerIntervalMs); interval.unref(); }
@@ -149,6 +151,7 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
     },
     async close() {
       stopping = true; clearInterval(interval);
+      await gateway?.stop();
       await new Promise(resolve => server.close(resolve));
       await lastTick; bridge.store.close();
     }

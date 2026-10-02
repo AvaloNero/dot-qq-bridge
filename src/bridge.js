@@ -3,7 +3,7 @@ import { BridgeError, canonical, equal, hash, object, plainText, string, toolRes
 import { webhookHeaders, webhookKey } from './signatures.js';
 import { destinationUrl } from './network.js';
 import { Store } from './store.js';
-import { createQqSender } from './qq.js';
+import { createQqClient, incomingMessage } from './qq.js';
 import { checkSetup, ownerConfigured, setupTool } from './setup.js';
 
 export const EVENT_NAME = 'qq.message.created';
@@ -37,11 +37,20 @@ export const toolDefinitions = [
 export class Bridge {
   constructor(config, { clock = Date.now, send, store = new Store(config) }) {
     this.config = config; this.clock = clock; this.send = send; this.store = store;
-    this.sendQq = createQqSender(config, send, clock);
+    this.qq = createQqClient(config, send, clock); this.sendQq = this.qq.sendReply;
     this.running = false;
   }
   ready() {
     return ownerConfigured(this.config) && !!this.config.callbackHosts.length;
+  }
+  // Called only after raw Webhook verification, or by the authenticated TLS Gateway adapter.
+  acceptQq(payload, replayId, checkpoint) {
+    const message = incomingMessage(payload, this.config, this.clock());
+    if (!message || this.store.get('SELECT id FROM messages WHERE outbound_id=?', message.id)) {
+      if (checkpoint) this.store.recordGatewayCheckpoint(checkpoint, this.clock());
+      return 'ignored';
+    }
+    return this.store.ingest(message, replayId, this.clock(), checkpoint);
   }
   eventArgs(name, args) {
     if (name !== EVENT_NAME) throw new BridgeError('Unknown event', { code: -32011, data: { kind: 'event' } });

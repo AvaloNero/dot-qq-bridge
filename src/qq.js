@@ -17,7 +17,8 @@ export function incomingMessage(payload, config, now) {
     text: data.content, timestamp: data.timestamp, expires: occurred + config.replyTtlMs };
 }
 
-export function createQqSender(config, send, clock = Date.now) {
+// One token cache is shared by passive replies and optional Gateway discovery.
+export function createQqClient(config, send, clock = Date.now) {
   const apiOrigin = config.qqApiProfile === 'tencent-sandbox' ? 'https://sandbox.api.sgroup.qq.com' :
     config.qqApiProfile === 'tencent-sdk' ? 'https://api.sgroup.qq.com' : 'https://api.bot.qq.com';
   const tokenOrigin = config.qqApiProfile === 'documented' ? 'https://api.bot.qq.com' : 'https://bots.qq.com';
@@ -42,7 +43,29 @@ export function createQqSender(config, send, clock = Date.now) {
     })().finally(() => { pending = undefined; });
     return pending;
   }
-  return async function sendReply(message, text, { authorize = () => {} } = {}) {
+  async function gatewayInfo({ authorize = () => {} } = {}) {
+    authorize();
+    const accessToken = await getToken();
+    authorize();
+    let response;
+    try {
+      response = await send(`${apiOrigin}/gateway/bot`, { method: 'GET', hosts: [new URL(apiOrigin).hostname],
+        headers: { Authorization: `QQBot ${accessToken}`, 'X-Bot-Appid': config.qqAppId }, beforeConnect: authorize });
+    } catch { throw new BridgeError('QQ Gateway discovery failed', { retryable: true }); }
+    if (response.status === 401) { clearToken(); throw new BridgeError('QQ Gateway authentication rejected', { retryable: true }); }
+    let data;
+    try { data = JSON.parse(response.body.toString('utf8')); } catch { throw new BridgeError('Invalid QQ Gateway discovery response'); }
+    if (response.status !== 200 || (data.code !== undefined && data.code !== 0) || typeof data.url !== 'string' || data.url.length > 2048) {
+      throw new BridgeError('QQ Gateway discovery rejected', { retryable: response.status === 429 || response.status >= 500 });
+    }
+    const limit = data.session_start_limit;
+    if (!limit || !Number.isSafeInteger(limit.remaining) || limit.remaining < 0 || !Number.isSafeInteger(limit.reset_after) || limit.reset_after < 0) {
+      throw new BridgeError('Missing QQ Gateway connection quota');
+    }
+    return { accessToken, url: data.url, remaining: limit.remaining, resetAfter: limit.reset_after };
+  }
+  function clearToken() { token = undefined; expires = 0; }
+  async function sendReply(message, text, { authorize = () => {} } = {}) {
     const accessToken = await getToken();
     // Recheck the passive deadline after token refresh, immediately before the send.
     if (message.expires <= clock()) throw new BridgeError('QQ passive reply window expired');
@@ -57,7 +80,7 @@ export function createQqSender(config, send, clock = Date.now) {
       if (error instanceof BridgeError && error.code === -32012) throw error;
       throw new BridgeError('QQ send acknowledgement unknown', { uncertain: true });
     }
-    if (response.status === 401) { token = undefined; expires = 0; throw new BridgeError('QQ authentication rejected', { retryable: true }); }
+    if (response.status === 401) { clearToken(); throw new BridgeError('QQ authentication rejected', { retryable: true }); }
     if (response.status === 429) throw new BridgeError('QQ rate limited', { retryable: true });
     if (response.status >= 500) throw new BridgeError('QQ send acknowledgement unknown', { uncertain: true });
     let data;
@@ -67,5 +90,9 @@ export function createQqSender(config, send, clock = Date.now) {
     }
     if (typeof data.id !== 'string' || !data.id) throw new BridgeError('QQ send acknowledgement unknown', { uncertain: true });
     return data.id;
-  };
+  }
+  return { sendReply, gatewayInfo, clearToken };
+}
+export function createQqSender(config, send, clock = Date.now) {
+  return createQqClient(config, send, clock).sendReply;
 }

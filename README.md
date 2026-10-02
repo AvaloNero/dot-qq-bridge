@@ -2,19 +2,23 @@
 
 QQ 官方机器人本人单聊文字 → 自建 MCP Events → **订阅所在的现有 OpenAI dot** → `reply_to_qq` → 同一 QQ 会话。
 
-第一版已完成可运行的本地 HTTP 模拟闭环及持久性、安全回归测试。**真实 QQ、ChatGPT 插件安装、当前 dot 的事件订阅和云端部署均未联通验证。** 模拟器会明确输出 `current_dot_connected: false` 与 `real_qq_connected: false`，其中回答是固定测试数据。项目不调用模型 API，不读取 Cookie，不迁移或导出 dot 私有记忆。
+第一版提供可运行的 Webhook 和可审查的官方 WebSocket Gateway 入站，复用同一主人白名单、持久队列和受限回复工具。HTTP 与真实本机 WebSocket 模拟闭环均通过。**真实 QQ、ChatGPT 插件安装、当前 dot 的事件订阅和云端部署均未联通验证。** 模拟器明确输出两个连接标记为 `false`，回答是固定测试数据。项目不调用模型 API，不读取 Cookie，不迁移或导出 dot 私有记忆。
 
 ## 立即运行离线验证
 
-需要 Node.js **24.15+、低于 25**。运行时和测试均使用 Node 内置模块，**无需安装依赖或填写任何凭据**。在仓库根目录运行：
+需要 Node.js **24.15+、低于 25**。唯一运行依赖是与腾讯 SDK 使用版本一致的 MIT `ws@8.21.0`，固定在 lockfile；扫码 connector 没有安装。无需填写任何账户凭据。在仓库根目录运行：
 
 ```powershell
+npm ci --ignore-scripts --registry=https://registry.npmjs.org
 npm run check
 npm test
 npm run simulate
+npm run simulate:gateway
+npm run connect:qq -- --plan
+npm run connect:qq -- --demo
 ```
 
-Windows 如果 PowerShell 限制 `npm.ps1`，使用 `npm.cmd`。测试只在 loopback 开启临时 HTTP 服务，外部请求通过注入的模拟接收器完成；不会请求 QQ、OpenAI 或 OAuth 服务。`simulate` 检查真实本地 HTTP 请求、签名、重复入站、MCP 订阅验证、事件投递、工具调用和一次被动 QQ 回复的路由。
+Windows 如果 PowerShell 限制 `npm.ps1`，使用 `npm.cmd`。依赖下载只访问官方 npm registry；测试只在 loopback 开启临时 HTTP/WebSocket 服务，外部请求通过注入的模拟接收器完成，不会请求 QQ、OpenAI 或 OAuth。Gateway 模拟实际执行 HELLO、IDENTIFY、断线和 RESUME，重放后仍只创建一个事件和一份回复。连接向导的 plan/demo 不扫码、不保存凭据、不改主人绑定。
 
 ```json
 {
@@ -33,6 +37,7 @@ Windows 如果 PowerShell 限制 `npm.ps1`，使用 `npm.cmd`。测试只在 loo
 
 - 只收 `C2C_MESSAGE_CREATE`，只允许一个明确配置的 `author.user_openid`。未配置主人身份、MCP 主体或有效订阅时拒绝处理。
 - QQ 回调按原始字节进行 Ed25519 验签，检查时间、防重放；验签成功且入站记录提交到 SQLite 后才 ACK。
+- 可选择 `QQ_TRANSPORT=gateway`：从固定官方 API 获取 WSS 地址，校验 TLS/公网 DNS 并固定实际连接 IP；只在完整主人配置及有效 dot 订阅后连接。入站和恢复序号在同一事务提交，持久租约防止同库双接入；不开放 Webhook。
 - 一个有效 dot 订阅，签名验证回调地址后持久保存；固定事件 `qq.message.created`，过滤参数仅为 `{"conversation":"owner"}`。
 - `get_qq_message` 读取本订阅已投递尝试的消息与状态；`reply_to_qq` 只接受已验证 `message_id` 和纯文本。收件人从数据库确定，不能传 QQ 号或任意目标。
 - `check_bridge_setup` 是受同一 MCP 鉴权保护的只读配置诊断。可报告缺失设置和回调主机名，不输出 URL 路径/查询/secret，不发请求或自动批准主机；身份完整但白名单为空时仍展示事件，订阅会给出可操作的拒绝提示。
@@ -63,6 +68,8 @@ npm start
 
 QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DATABASE_PATH`，例如 `data/sandbox.sqlite`；token 请求走 `bots.qq.com`，回复只走 `sandbox.api.sgroup.qq.com`。正式环境选择适用的 production profile，禁止共用已绑定环境的数据库。
 
+可试用的渠道交接与具体授权见 [docs/handoff.md](docs/handoff.md)。官方长连接及连接向导步骤见 [docs/connection.md](docs/connection.md)。扫码包 `@tencent-connect/qqbot-connector@1.2.0` 的 npm/package metadata 为 `UNLICENSED`，未附 LICENSE；官方指南推荐它，但适用于本项目的使用许可仍需确认。已准备公开回调接口，真实 `--scan` 保持禁用。授权后的已有官方凭据 + 已验证主人 openid 路线不依赖这个包。
+
 ## 架构、协议与交付物
 
 - [docs/architecture.md](docs/architecture.md)：持久队列、认证边界、去重、故障语义。
@@ -70,6 +77,8 @@ QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DAT
 - [docs/activation.md](docs/activation.md)：真实 QQ、OAuth、当前 dot 接入的最小清单及验收项。
 - [docs/deployment.md](docs/deployment.md)：持续托管、TLS、固定出网、存储和停机运行指南。
 - [docs/tencent-reference.md](docs/tencent-reference.md)：腾讯参考模块、端点与回复窗口差异、SDK 复用判断及许可证。
+- [docs/connection.md](docs/connection.md)：长连接、离线向导和扫码许可阻塞。
+- [docs/handoff.md](docs/handoff.md)：主线程云端交接、认证边界和最少授权。
 - `plugin/`：按官方 Agent Plugins 结构编写的手动接入模板，远程地址为保留的 `.invalid` 占位符；尚未注册或安装。
 - `Dockerfile`：持续容器托管模板，尚未构建、部署或选择收费服务。
 

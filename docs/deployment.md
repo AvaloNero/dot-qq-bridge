@@ -2,20 +2,20 @@
 
 本次未构建容器、选择服务商、购买域名、公开端点或部署。Docker 在开发环境中不可用，Dockerfile 是待授权构建验证的模板。实际运行环境须使用 Node 24.15+ 的 Linux 常驻进程或容器，不依赖 RMB16 持续在线。
 
-用户目标是 dot 管理的云环境，不要求本人自备服务器。能否原样运行取决于该环境是否提供上述 Node 运行时、持久卷、常驻后台进程、公网 HTTPS 路由和必要出网；这些能力尚未在 dot 云电脑验证。现有实现不能直接作为 Workers/D1 请求 handler 上传：需要 HTTP 入口适配、替换本地 SQLite/WAL 事务与 lease、使用可靠队列消费者替换进程计时器，并适配 crypto/受控出站网络且保留 SSRF 防护。OAuth 发行方仍是独立前提。本轮没有实施这类迁移或发布。
+用户目标是 dot 管理的云环境，不要求本人自备服务器。能否原样运行取决于该环境是否提供上述 Node 运行时、持久卷、常驻后台进程、经批准的 MCP 路由/认证和必要出网；这些能力尚未在 dot 云电脑验证。现有实现不能直接作为 Workers/D1 请求 handler 上传：需要 HTTP 入口适配、替换本地 SQLite/WAL 事务与 lease、使用可靠队列消费者替换进程计时器，并适配 crypto/受控出站 HTTPS/WSS 且保留 SSRF 防护。OAuth 发行方或有明确主体保证的平台认证仍是前提。本轮没有实施这类迁移或发布；共享云端探针和服务/数据库/认证授权由主线程处理，具体交接见 [handoff.md](handoff.md)。
 
 ## 托管必须满足的条件
 
 - 服务及队列 worker 持续运行，不自动休眠；受控的重启策略、至少 60 秒停止宽限时间。
 - 一个服务实例、可靠的本地持久卷，SQLite WAL/FULL/fsync 可用；不使用临时文件系统或共享 NFS 来假装多副本持久队列。
 - 公网 HTTPS 443、有效证书与 DNS。反向代理转发原始请求体，保留 `Authorization`、QQ 验签头、MCP 方法/版本/名字头和正确的公开 Host。
-- `/qq/webhook` 可由腾讯直接访问，使用协议验签；不能跳转到 Sites 私有登录页。`/mcp` 仍由桥接 OAuth 保护；OAuth metadata 可被发现。
+- Webhook 模式的 `/qq/webhook` 可由腾讯直接访问，使用协议验签；不能跳转到 Sites 私有登录页。Gateway 模式关闭该入口，须能持续出站 WSS；`/mcp` 仍由桥接 OAuth 保护，元数据可被发现。
 - 出站可访问选定 QQ token/API 主机、指定 JWKS 主机和经批准的 ChatGPT callback。若 QQ 当前账户要求 IP 白名单，须有固定公网出网 IP 并由主人在 QQ 控制台配置。
 - 秘密注入不进镜像或 Git；`STORAGE_KEY` 与加密 DB 的备份配套保存，磁盘和备份有访问控制。
 
 Sites 的 HTTP MCP 与 D1 不足以证明此架构可直接部署：QQ 公网回调穿过私有鉴权、事件插件注册、持续 worker/重试、固定出网及 D1 适配均未验证。本版使用可移植 Node HTTP + SQLite，不把 Sites 或任意 serverless 的请求后计时器当作可靠队列。
 
-腾讯 WebSocket Gateway 可以作为未来替代入站适配，避免 QQ 公网 Webhook，但需要账号确实开放网关、常驻长连接、resume 与持久接受策略；尚未实现或验证。它仍不能替代 MCP OAuth 端点和持久任务执行条件。
+腾讯 WebSocket Gateway 入站已实现并通过离线 loopback 恢复闭环，避免 QQ 公网 Webhook；当前账号的权限、真实 WSS、沙箱行为和云端常驻仍未验证。它不能替代 MCP 身份认证和持久任务执行条件，启用步骤见 [connection.md](connection.md)。
 
 ## 授权后构建示例
 

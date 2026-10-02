@@ -35,7 +35,8 @@ export class Store {
       CREATE INDEX IF NOT EXISTS due_jobs ON jobs(state,next_at);
       CREATE TABLE IF NOT EXISTS replays (id TEXT PRIMARY KEY, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS rates (kind TEXT NOT NULL, at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS rate_window ON rates(kind,at);`);
+      CREATE INDEX IF NOT EXISTS rate_window ON rates(kind,at);
+      CREATE TABLE IF NOT EXISTS gateway_lease (slot INTEGER PRIMARY KEY CHECK(slot=1), token TEXT NOT NULL, expires INTEGER NOT NULL);`);
     try {
       const check = this.get('SELECT value FROM metadata WHERE key=?', 'vault');
       if (check) this.vault.open(check.value, 'metadata');
@@ -61,6 +62,37 @@ export class Store {
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); this.db.exec('COMMIT'); return result; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  acquireGatewayLease(token, now) {
+    return this.tx(() => {
+      this.run(`INSERT INTO gateway_lease VALUES (1,?,?) ON CONFLICT(slot) DO UPDATE SET token=excluded.token,expires=excluded.expires
+        WHERE gateway_lease.expires<=? OR gateway_lease.token=?`, token, now + this.config.leaseMs, now, token);
+      return this.get('SELECT token FROM gateway_lease WHERE slot=1').token === token;
+    });
+  }
+  releaseGatewayLease(token) { this.run('DELETE FROM gateway_lease WHERE slot=1 AND token=?', token); }
+  renewGatewayLease(token, now) {
+    return this.run('UPDATE gateway_lease SET expires=? WHERE slot=1 AND token=? AND expires>?', now + this.config.leaseMs, token, now).changes === 1;
+  }
+  assertGatewayLease(token, now) {
+    const lease = this.get('SELECT token,expires FROM gateway_lease WHERE slot=1');
+    if (!lease || lease.token !== token || lease.expires <= now) throw new BridgeError('QQ Gateway lease lost', { status: 503 });
+  }
+  gatewaySession() {
+    const row = this.get('SELECT value FROM metadata WHERE key=?', 'gateway_session');
+    return row ? this.vault.open(row.value, 'gateway_session') : null;
+  }
+  // Must run inside the same transaction as acceptance of an incoming Gateway message.
+  saveGatewayCheckpoint(checkpoint, now) {
+    this.assertGatewayLease(checkpoint.leaseToken, now);
+    if (typeof checkpoint.sessionId !== 'string' || !/^[a-zA-Z0-9_-]{1,256}$/.test(checkpoint.sessionId) ||
+        !Number.isSafeInteger(checkpoint.lastSeq) || checkpoint.lastSeq < 0) throw new BridgeError('Invalid QQ Gateway checkpoint');
+    const session = this.vault.seal({ sessionId: checkpoint.sessionId, lastSeq: checkpoint.lastSeq }, 'gateway_session');
+    this.run('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', 'gateway_session', session);
+  }
+  recordGatewayCheckpoint(checkpoint, now) { this.tx(() => this.saveGatewayCheckpoint(checkpoint, now)); }
+  clearGatewaySession(token, now) {
+    this.tx(() => { this.assertGatewayLease(token, now); this.run('DELETE FROM metadata WHERE key=?', 'gateway_session'); });
   }
   subscription(id) {
     const row = this.get('SELECT * FROM subscriptions WHERE id=?', id);
@@ -98,8 +130,9 @@ export class Store {
       throw new BridgeError('Queue capacity reached', { status: 503, code: -32013, retryable: true, data: { limit: 'queue', max: this.config.queueLimit } });
     }
   }
-  ingest(message, replayId, now) {
+  ingest(message, replayId, now, checkpoint) {
     return this.tx(() => {
+      if (checkpoint) this.saveGatewayCheckpoint(checkpoint, now);
       this.run('DELETE FROM replays WHERE expires<?', now);
       if (this.get('SELECT id FROM replays WHERE id=?', replayId) || this.get('SELECT id FROM messages WHERE id=? OR source_event_id=?', message.id, message.sourceEventId)) return 'duplicate';
       const subscription = this.activeSubscription(now);

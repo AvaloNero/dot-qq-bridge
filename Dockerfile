@@ -4,7 +4,8 @@ FROM node:24-bookworm-slim
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATABASE_PATH=/data/bridge.sqlite
 WORKDIR /app
 RUN mkdir -p /data && chown node:node /data /app
-COPY --chown=node:node package.json LICENSE ./
+COPY --chown=node:node package.json package-lock.json LICENSE THIRD_PARTY_NOTICES.md ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org && npm cache clean --force
 COPY --chown=node:node src/ ./src/
 COPY --chown=node:node scripts/status.js ./scripts/status.js
 USER node

@@ -15,7 +15,7 @@ sha512-gU5HySLplczZXMUjM7NtiUACY7YfX9YlI/R9PKzCLMgLmHvwsX9L2sitsrYPMentGUr9b8NLf
 | `src/gateway/qqbot-gateway.ts` | QQBot 实例、token prefetch、Webhook 和 gateway 两种入口、session 持久化、OpenClaw 回复超时 | 只参考 QQ 协议，不接 OpenClaw backend |
 | `src/adapter/webhook.ts`；SDK `protocol/transport/webhook*.ts` | unsigned op13 challenge、原始 body Ed25519 验签、ACK `{op:12,d:0}` | 加时间窗口、防重放；持久提交后 ACK |
 | SDK `protocol/api/token.ts`、`api-client.ts`、`messages.ts` | access_token 缓存/刷新，QQBot Authorization，API/业务错误，msg_seq | 自己的简明 sender；固定 seq=1，不自动递增 |
-| SDK `protocol/gateway/gateway-connection.ts`、`reconnect.ts`、`utils/session-store.ts` | `/gateway` URL、WebSocket HELLO/IDENTIFY/RESUME、heartbeat、session_id/seq、重连和终止行为 | 首版未实现 WS；未来可用协议层 SDK 适配，但需先验证权限和持久接受策略 |
+| SDK `protocol/gateway/gateway-connection.ts`、`reconnect.ts`、`utils/session-store.ts` | `/gateway` URL、WebSocket HELLO/IDENTIFY/RESUME、heartbeat、session_id/seq、重连和终止行为 | 自行实现官方 `/gateway/bot` 公开协议；消息/seq 原子提交、单一持久租约、TLS/DNS 固定 IP；真实权限待验证 |
 | SDK `protocol/gateway/event-dispatcher.ts` | C2C `author.user_openid`、message_scene.ext 的 msg_idx/ref 等 | 身份与路由取标准 ID；不转发 auth_token/扩展鉴权字段 |
 | `src/middleware/access-control.ts`、`src/adapter/pairing.ts` | allowlist 为空或 `*` 可放行、OpenClaw 动态配对 | 本桥接空白名单拒绝，只显式绑定一个主人，无配对流程 |
 | `src/setup/login.ts`、`src/setup/finalize.ts` | connector 的 `startQrConnect` / `qrConnect` 返回 app 凭据及可选 `userOpenid`，随后写 OpenClaw 配置 | 只核实可选官方扫码路线；本桥接缺主人 ID 必须拒绝，未导入/执行 connector，不自动登记 Webhook |
@@ -39,10 +39,10 @@ sha512-gU5HySLplczZXMUjM7NtiUACY7YfX9YlI/R9PKzCLMgLmHvwsX9L2sitsrYPMentGUr9b8NLf
 
 ## SDK 复用判断与许可
 
-这个无依赖 Webhook 首版不引入 SDK：所需协议很小，已用官方 Ed25519 向量检查；直接引入会连带 WS 依赖、序号/路由/日志/重试行为，仍须包装严格主人及原 ID 约束。未来有实际 gateway 需求时，可优先复用纯 QQ SDK 的 TokenManager、GatewayConnection 与 session interface，并自行实现提交队列后的接受策略；不能导入 OpenClaw 模型/backend、媒体 pipeline 或主动 fallback。
+Webhook 不引入腾讯 SDK。长连接加入了与该 SDK 一致的 `ws@8.21.0` MIT 依赖，固定版本/integrity；自行实现已公布的 QQ Gateway 协议以保留严格主人、原 ID 回复、受控网络及原子接受策略，没有导入腾讯 SDK 或 OpenClaw 模型/backend、媒体 pipeline、主动 fallback。
 
 参考 gateway 保存 seq、分派 onMessage 不等待本桥接队列的耐久提交；所以直接拷贝 WS 代码不能获得本项目的“持久接受后确认”。需要单独验证 reconnect/resume 和 crash gap；WebSocket 只是减少 QQ 公网入站依赖，不能证明当前 dot 的 Events/OAuth 或云端队列已可用。
 
 参考仓库为 MIT，许可中的版权主体见 [固定版本 LICENSE](https://github.com/tencent-connect/openclaw-qqbot/blob/a730701d36aa7a070f98d4cba0f340f91f15e5f5/LICENSE)。SDK npm 包声明 MIT。本版未复制或打包这些运行时代码，也未改写原仓库许可证；今后如复制实质代码须保留对应版权与 MIT 许可，若引入依赖须复核具体包版本的许可与维护状态。
 
-扫码使用的是另一个包 `@tencent-connect/qqbot-connector@1.2.0`，不能从参考仓库或 qqbot-nodejs 的 MIT 许可推断 connector 的许可。本轮只静态阅读参考调用，没有安装或调用 connector；许可及真实扫码授权留待单独审查。官方流程见 [Agent 接入](https://bot.q.qq.com/wiki/agent-qqbot/)。
+扫码使用的是另一个包 `@tencent-connect/qqbot-connector@1.2.0`，不能从参考仓库或 qqbot-nodejs 的 MIT 许可推断其许可。本轮从官方 registry 下载只读审查 package.json、README、公开 d.ts 及文件列表：npm/package 标为 `UNLICENSED`，没有 LICENSE；没有阅读/复制其混淆运行实现、安装或执行 connector。已准备公开接口的受控向导，真实扫码待单独许可审查和授权；细节与 integrity 见 [connection.md](connection.md)。官方流程见 [Agent 接入](https://bot.q.qq.com/wiki/agent-qqbot/)。

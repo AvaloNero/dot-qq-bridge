@@ -3,7 +3,9 @@
 ```mermaid
 flowchart LR
   QQ[QQ 官方机器人 / 本人 C2C] -->|HTTPS 原始字节验签| Ingress[QQ Webhook]
+  QQ -->|官方 TLS WSS / IDENTIFY 或 RESUME| Gateway[QQ Gateway / 单一持久租约]
   Ingress -->|主人白名单 / 提交后 ACK| DB[(SQLite WAL / 加密正文)]
+  Gateway -->|主人白名单 / 入站与 seq 原子提交| DB
   DB --> Worker[常驻有界队列 Worker]
   Worker -->|Standard Webhooks 签名事件| Dot[已订阅的现有 OpenAI dot]
   Dot -->|OAuth / reply_to_qq / 入站 ID| MCP[MCP 2.0 HTTP]
@@ -21,6 +23,12 @@ flowchart LR
 3. 只识别绑定的 AppID/Secret 和一个 `author.user_openid`。主人配置为空时拒绝；不动态配对、自动学习或接受 `*`。
 4. 入站 ID、QQ 源事件 ID、签名重放记录、限流及事件 job 在同一 SQLite 事务提交，然后返回 `{op:12,d:0}`。重复已验证消息不会创建新的任务。
 5. 没有有效 dot 订阅时返回失败，不存储等待以后导出的陌生历史。
+
+Gateway 是另一种受信入站适配，不接受 HTTP 调用方提交“已验证”标记。先用固定 QQ token/API 地址发现 WSS，再对指定确切 hostname、公网 DNS、固定 IP、TLS 和禁止重定向做检查。它不使用 Webhook Ed25519 签名，真实性来自官方 API 发现及经验证的 TLS WSS 连接；同样限制 32 KiB UTF-8 JSON、主人、纯文本、截止时间和回环。
+
+Gateway session ID 与 seq 加密存储；消息、限流、去重、事件 job 和 seq 在同一 SQLite 事务提交。暂时的订阅/容量/频控失败不前移 seq，断线后尝试 RESUME；故意拒绝的非主人/过期/非法输入只保存处理序号，不创建消息。session 无效时重新 IDENTIFY；恢复补发范围是 QQ 的平台保证，不能承诺长期离线不丢消息。缺少外层 event ID 时，适配器以已验证 session/seq 派生来源 ID，消息本身仍按原 QQ message ID 去重。
+
+一个 60 秒持久租约、每五秒续期，阻止同库两个 Gateway 接收器；失去租约即停止，旧 token 不能提交 checkpoint。心跳只报告已提交 seq，缺 ACK 则重连；频控关闭等待一分钟，账号/协议致命关闭停止并等待操作者修复，不切换环境或扩大 intents。只订阅官方 `1 << 25`，此 intent 含 group/C2C，业务仍过滤所有群聊。
 
 MCP OAuth 主体与 QQ 主人是两种身份，必须由操作者明确绑定。`clientInfo` 是自报元数据，不作为鉴权依据。数据库持久记录 AppID、主人和 MCP 主体；更换任意一项不能复用原数据库。沙箱/生产环境也明确绑定，切换环境使用独立库；旧版已有消息的库不能自动归为沙箱。
 
@@ -49,7 +57,7 @@ SQLite `WAL`、`synchronous=FULL`、事务领取和随机 lease token 保护持�
 
 ## 数据与模型边界
 
-消息/回复正文及回调 URL、secret 用 AES-256-GCM 加密，并以记录类型/ID 作为 AAD。`STORAGE_KEY` 是独立的 32 字节密钥；更换错误密钥会拒绝打开库。身份、消息 ID、时间和状态仍可见，宿主磁盘、文件 ACL 和备份必须受控。
+消息/回复正文、Gateway session 及回调 URL、secret 用 AES-256-GCM 加密，并以记录类型/ID 作为 AAD。`STORAGE_KEY` 是独立的 32 字节密钥；更换错误密钥会拒绝打开库。身份、消息 ID、时间和状态仍可见，宿主磁盘、文件 ACL 和备份必须受控。
 
 七天后将当前记录中的正文置空；去重 tombstone 长期保留，因此数据库大小仍会增长。历史 WAL 页、磁盘残留及旧备份不承诺被物理擦除，备份保留策略需另设。不要导出数据库作为 dot 记忆，也不要提交 `.env` 或请求体日志。
 

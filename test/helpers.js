@@ -49,6 +49,10 @@ export async function harness({ overrides = {}, sendOverride, dbPath, worker = f
       const overridden = await sendOverride(url, options, { now, deliveries, sends });
       if (overridden !== undefined) return overridden;
     }
+    if (['https://api.bot.qq.com/gateway/bot', 'https://api.sgroup.qq.com/gateway/bot', 'https://sandbox.api.sgroup.qq.com/gateway/bot'].includes(url)) {
+      return { status: 200, body: Buffer.from(JSON.stringify({ url: `wss://${new URL(url).hostname}/websocket/`, shards: 1,
+        session_start_limit: { total: 1000, remaining: 1000, reset_after: 86400000, max_concurrency: 1 } })) };
+    }
     const body = JSON.parse(options.body.toString('utf8'));
     if (url.startsWith('https://receiver.example.com/')) {
       if (!verifyWebhook(signingSecret, Object.fromEntries(Object.entries(options.headers).map(([k, v]) => [k.toLowerCase(), v])), options.body, now)) throw new Error('Fixture receiver rejected signature');
