@@ -16,7 +16,7 @@ QQ Webhook 不能依赖浏览器登录或私人 Sites 的会话 Cookie。即使�
 | --- | --- | --- |
 | QQ AppID、Bot Secret | 本人的官方机器人控制台 | 签名与 token 换取；仅存秘密管理器 |
 | 本人的 app-specific `user_openid` | 本人测试消息的已验证签名 C2C 回调，并独立确认账号 | 单一主人白名单；普通 QQ 号不适用 |
-| QQ API profile | 当前 QQ 文档、参考 SDK 和账号沙箱实测 | `documented` 或 `tencent-sdk`，不自动尝试其他主机 |
+| QQ API profile | 当前 QQ 文档、参考 SDK 和账号沙箱实测 | 官方专用沙箱使用 `tencent-sandbox`；生产使用 `documented` 或 `tencent-sdk`，不自动尝试其他主机 |
 | 一名 OAuth `sub` | 现有发行方已验证账户 | `MCP_OWNER_SUBJECT`；不使用 display name/clientInfo |
 | issuer、公开 JWKS、audience/scope | 现有发行方配置及批准的资源 URL | RS256、`aud=PUBLIC_ORIGIN/mcp`、`scope=qq:bridge` |
 | 公开 origin、证书、持久卷和出网 | 经批准的托管配置 | 两个 HTTP 入口和常驻 worker；如需要固定出网 IP，由主人加入 QQ 白名单 |
@@ -24,6 +24,8 @@ QQ Webhook 不能依赖浏览器登录或私人 Sites 的会话 Cookie。即使�
 | STORAGE_KEY 与配套备份策略 | 经批准的秘密管理器 | 32 随机字节的 canonical base64；本次未生成 |
 
 `PUBLIC_ORIGIN` 不带末尾 `/`；`OAUTH_AUDIENCE` 必须等于它加 `/mcp`。OAuth metadata 在 `/.well-known/oauth-protected-resource/mcp`。发行方的 discovery、注册方式/redirect URI、资源参数和可用 scope 必须与实际 ChatGPT 客户端核实；不能把本地 JWT 签名测试作为 OAuth 登陆成功的证据。
+
+专用 QQ 沙箱配置 `QQ_API_PROFILE=tencent-sandbox`、`DATABASE_PATH=data/sandbox.sqlite`。Token 使用 `https://bots.qq.com/app/getAppAccessToken`，被动回复使用 `https://sandbox.api.sgroup.qq.com/v2/users/{已验证openid}/messages`；不回退正式环境。切换生产环境使用另一个 DB。原首版已有消息的旧库不能在升级时自动转成沙箱。
 
 ## 明确绑定 QQ 身份
 
@@ -37,14 +39,22 @@ npm run verify:qq -- C:\private-capture\body.bin C:\private-capture\headers.json
 
 `headers.json` 是普通对象，保留 `X-Signature-Timestamp`、`X-Signature-Ed25519` 和有提供时的 `X-Bot-Appid`。body 必须保持原字节，不能经过 JSON 美化；验签时间最多偏差五分钟。此命令不访问网络，只输出已验证 AppID 和 author openid，不输出正文/secret，也不修改绑定。验签证明来自该机器人应用，不单独证明作者就是你；本人必须独立核对消息来源后，显式批准把**唯一** openid 配入 `.env`/秘密管理器。检查结束后按本人的受控数据保留规则处理 capture。
 
+### 官方扫码路线：可选后续，尚未集成
+
+腾讯 [Agent 接入指南](https://bot.q.qq.com/wiki/agent-qqbot/) 提供手机 QQ 扫码绑定路线。已静态核实参考仓库 `src/setup/login.ts` 的 `startQrConnect` 和 `src/setup/finalize.ts` 的 `qrConnect`：connector 可返回 `appId`、`appSecret`、可选的 `userOpenid`。未来可单独适配凭据获取，将主人明确选择的一项映射到 `QQ_APP_ID`、`QQ_BOT_SECRET`、`QQ_OWNER_OPENID`，无需接入 OpenClaw 模型后端。
+
+必须先审查 `@tencent-connect/qqbot-connector@1.2.0` 自身许可、维护和扫码权限，再单独获得真实扫码授权。缺少 `userOpenid`、返回多账号而没有明确选择、或无法独立确认主人时必须拒绝，不能照抄参考中的空白名单行为。本仓库没有导入、执行这个 SDK，也没有发起扫码或自动保存真实凭据。
+
+参考扫码流程通常接后续 WebSocket gateway；这两个 setup 模块不自动登记本桥接的公网 Webhook。扫码获得 app/主人信息不能视为 Webhook、MCP OAuth 或原 dot 已连接。当前首版仍需单独完成事件回调登记；不在本轮更换 transport。
+
 ## 接入原 dot
 
 按 [OpenAI 连接指南](https://developers.openai.com/plugins/deploy/connect-chatgpt) 在允许的账户中开启 developer mode、从 ChatGPT Plugins 注册经批准的 HTTPS `/mcp` 并完成 OAuth。此阶段不接受超出读消息/回复绑定 QQ 会话范围的工具权限。
 
-1. 确认 `server/discover`、`tools/list`、`events/list` 成功，插件页列出一个 event 和两个工具；如果客户端只发 legacy initialize，要记录不兼容并解决，不偷偷降级协议。
+1. 完成 MCP 鉴权后，先调用 `check_bridge_setup`，arguments 为 `{}`，查看缺失设置名；插件页应列出三个工具。主人绑定完整后显示一个 event，即使 callback 白名单尚未填写。如果客户端只发 legacy initialize，要记录不兼容并解决，不偷偷降级协议。
 2. [plugin/](../plugin/) 提供 portable package 草稿。仅在真实服务器注册后更换 `.invalid` URL；若 ChatGPT 需要 registered app mapping，让官方 plugin-creator 使用真实 technical ID 生成并核对。不要编造 `.app.json` ID，也不要安装到替代 dot。
 3. 在**现有 dot 的对话/任务上下文**里明确启用该插件并请求订阅 `qq.message.created`，参数 `{"conversation":"owner"}`。实际 URL/secret 由 ChatGPT 在订阅时提供，不由桥接伪造，也不需要 OpenAI API key。
-4. 先从受控订阅检查取得 hostname，经主人批准加入 `MCP_CALLBACK_ALLOWED_HOSTS` 后重试。白名单空时失败是预期；只看主机名，不导出完整带秘密路径的回调。收到有效挑战回声、保存 subscription 并有 refreshBefore 后，才允许入站排队。
+4. 白名单为空时，首次订阅仍被拒绝；受认证错误的 `data.callback_hostname` 和 `data.next_step` 会给出规范化主机名与操作提示，不回显 path/query/secret，也不联系它。主人独立确认是官方 ChatGPT callback 后，显式添加确切 hostname 到 `MCP_CALLBACK_ALLOWED_HOSTS`，重启服务、刷新插件元数据并重试。也可用 `check_bridge_setup` 的 `callback_url` 参数进行同样的只读检查。不要自动信任请求提供的 hostname；预检不证明 DNS/连接安全。真正订阅仍逐次检查 DNS、公网 IP、TLS、禁止重定向和签名 challenge，成功保存后才允许入站排队。
 5. 事件任务只批准必要的绑定会话回复；是否允许免逐条确认及对应权限范围由主人在 ChatGPT 明确选择。本次不替主人接受任何新的持久授权。
 
 建议由主人审查后在原 dot 中使用的事件任务说明：

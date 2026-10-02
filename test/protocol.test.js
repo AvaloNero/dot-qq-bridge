@@ -31,7 +31,7 @@ test('MCP 2.0 discovery, metadata, tool annotations, complete results and unsupp
   assert.deepEqual(discover.body.result.capabilities.events, {});
   assert.equal(discover.body.result.cacheScope, 'private');
   const tools = (await f.postMcp('tools/list')).body.result.tools;
-  assert.deepEqual(tools.map(tool => tool.name), ['get_qq_message', 'reply_to_qq']);
+  assert.deepEqual(tools.map(tool => tool.name), ['get_qq_message', 'reply_to_qq', 'check_bridge_setup']);
   assert.equal(tools[1].annotations.readOnlyHint, false); assert.equal(tools[1].annotations.idempotentHint, true);
   assert.equal(tools[1].inputSchema.additionalProperties, false);
   const events = (await f.postMcp('events/list')).body.result.events;

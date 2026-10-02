@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createQqSender } from '../src/qq.js';
 import { config, harness, qqPayload, qqHeaders } from './helpers.js';
 
-test('both explicitly selected official endpoint profiles send the same passive msg_id/msg_seq route', async () => {
-  for (const profile of ['documented', 'tencent-sdk']) {
+test('all explicit official endpoint profiles preserve the passive msg_id/msg_seq route and exact hosts', async () => {
+  for (const profile of ['documented', 'tencent-sdk', 'tencent-sandbox']) {
     const calls = [], now = Date.now();
     const sender = createQqSender(config({ qqApiProfile: profile }), async (url, options) => {
       calls.push({ url, options });
@@ -12,7 +12,10 @@ test('both explicitly selected official endpoint profiles send the same passive 
     }, () => now);
     assert.equal(await sender({ owner: 'owner', id: 'verified', expires: now + 10000 }, 'answer'), 'outbound');
     assert.equal(calls[0].url, profile === 'documented' ? 'https://api.bot.qq.com/app/getAppAccessToken' : 'https://bots.qq.com/app/getAppAccessToken');
-    assert.equal(calls[1].url, profile === 'documented' ? 'https://api.bot.qq.com/v2/users/owner/messages' : 'https://api.sgroup.qq.com/v2/users/owner/messages');
+    const origin = { documented: 'https://api.bot.qq.com', 'tencent-sdk': 'https://api.sgroup.qq.com', 'tencent-sandbox': 'https://sandbox.api.sgroup.qq.com' }[profile];
+    assert.equal(calls[1].url, `${origin}/v2/users/owner/messages`);
+    assert.deepEqual(calls[0].options.hosts, [new URL(calls[0].url).hostname]);
+    assert.deepEqual(calls[1].options.hosts, [new URL(origin).hostname]);
     assert.deepEqual(JSON.parse(calls[1].options.body), { msg_type: 0, content: 'answer', msg_id: 'verified', msg_seq: 1 });
   }
 });

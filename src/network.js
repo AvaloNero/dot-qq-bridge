@@ -22,13 +22,23 @@ export function publicAddress(address) {
   }
   return false;
 }
-export function destinationUrl(raw, hosts) {
+export function validHostname(host) {
+  return typeof host === 'string' && host.length <= 253 && !isIP(host) &&
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(host);
+}
+// Structural inspection only: no DNS, connection, trust or policy changes.
+export function callbackUrl(raw) {
   let url;
   try { url = new URL(raw); } catch { throw new BridgeError('Malformed callback URL'); }
   if (url.protocol !== 'https:' || url.username || url.password || url.hash || (url.port && url.port !== '443') ||
-      !hosts.includes(url.hostname) || url.hostname.endsWith('.') || isIP(url.hostname.replace(/^\[|\]$/g, ''))) {
-    throw new BridgeError('Destination must be HTTPS on an explicitly allowed hostname');
+      !validHostname(url.hostname)) {
+    throw new BridgeError('Callback requires an HTTPS DNS hostname on port 443, without credentials or fragment');
   }
+  return url;
+}
+export function destinationUrl(raw, hosts) {
+  const url = callbackUrl(raw);
+  if (!hosts.includes(url.hostname)) throw new BridgeError('Destination hostname is not explicitly allowed');
   return url;
 }
 export async function resolveDestination(raw, hosts, lookup = dnsLookup) {

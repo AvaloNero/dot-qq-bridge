@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { validHostname } from './network.js';
 
 function number(env, key, fallback, min, max) {
   const value = env[key] ? Number(env[key]) : fallback;
@@ -38,7 +39,8 @@ export function readConfig(env = process.env) {
     }
   }
   if (config.ownerOpenid && !/^[a-zA-Z0-9_-]{1,128}$/.test(config.ownerOpenid)) throw new Error('Invalid QQ_OWNER_OPENID');
-  if (!['documented', 'tencent-sdk'].includes(config.qqApiProfile)) throw new Error('Invalid QQ_API_PROFILE');
+  if (!['documented', 'tencent-sdk', 'tencent-sandbox'].includes(config.qqApiProfile)) throw new Error('Invalid QQ_API_PROFILE');
+  if (config.callbackHosts.some(host => !validHostname(host))) throw new Error('MCP_CALLBACK_ALLOWED_HOSTS requires exact DNS hostnames without URLs, wildcards or IP addresses');
   if (!/^[a-zA-Z0-9:_-]{1,128}$/.test(config.oauthScope)) throw new Error('Invalid OAUTH_REQUIRED_SCOPE');
   return Object.freeze(config);
 }

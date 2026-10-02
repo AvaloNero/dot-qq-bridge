@@ -56,8 +56,8 @@ export async function harness({ overrides = {}, sendOverride, dbPath, worker = f
       deliveries.push(body);
       return { status: 202, body: Buffer.from('{}') };
     }
-    if (url === 'https://api.bot.qq.com/app/getAppAccessToken') return { status: 200, body: Buffer.from(JSON.stringify({ access_token: 'fixture-qq-token', expires_in: 7200 })) };
-    if (url.startsWith('https://api.bot.qq.com/v2/users/')) {
+    if (['https://api.bot.qq.com/app/getAppAccessToken', 'https://bots.qq.com/app/getAppAccessToken'].includes(url)) return { status: 200, body: Buffer.from(JSON.stringify({ access_token: 'fixture-qq-token', expires_in: 7200 })) };
+    if (['https://api.bot.qq.com', 'https://api.sgroup.qq.com', 'https://sandbox.api.sgroup.qq.com'].some(origin => url.startsWith(`${origin}/v2/users/`))) {
       sends.push({ url, body, headers: options.headers });
       return { status: 200, body: Buffer.from(JSON.stringify({ id: 'fixture-outbound-1' })) };
     }

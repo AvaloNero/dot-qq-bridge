@@ -35,6 +35,7 @@ Windows 如果 PowerShell 限制 `npm.ps1`，使用 `npm.cmd`。测试只在 loo
 - QQ 回调按原始字节进行 Ed25519 验签，检查时间、防重放；验签成功且入站记录提交到 SQLite 后才 ACK。
 - 一个有效 dot 订阅，签名验证回调地址后持久保存；固定事件 `qq.message.created`，过滤参数仅为 `{"conversation":"owner"}`。
 - `get_qq_message` 读取本订阅已投递尝试的消息与状态；`reply_to_qq` 只接受已验证 `message_id` 和纯文本。收件人从数据库确定，不能传 QQ 号或任意目标。
+- `check_bridge_setup` 是受同一 MCP 鉴权保护的只读配置诊断。可报告缺失设置和回调主机名，不输出 URL 路径/查询/secret，不发请求或自动批准主机；身份完整但白名单为空时仍展示事件，订阅会给出可操作的拒绝提示。
 - 一条入站最多一份回答，重复相同回答幂等；固定原 `msg_id` 和 `msg_seq: 1`，不降级为主动消息。
 - 默认 240 秒回复期限、每分钟 10 条入站/回复、队列 100 项、有界重试。QQ 发送结果不确定时停止自动重发。
 - 群聊、附件、引用、富媒体、主动消息和自动执行付款/删除/外部写入不在首版范围。事件文字只是数据；当前 dot 的其他工具权限仍须在 ChatGPT 中单独约束和确认。
@@ -59,6 +60,8 @@ npm start
 | `GET /readyz` | 配置及有效订阅检查；没有订阅为 `503`，也不证明模型已回答 |
 
 持久库只读状态：`npm run status`。不要打开公共管理页面或直接修改队列来重发。
+
+QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DATABASE_PATH`，例如 `data/sandbox.sqlite`；token 请求走 `bots.qq.com`，回复只走 `sandbox.api.sgroup.qq.com`。正式环境选择适用的 production profile，禁止共用已绑定环境的数据库。
 
 ## 架构、协议与交付物
 

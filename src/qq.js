@@ -18,8 +18,9 @@ export function incomingMessage(payload, config, now) {
 }
 
 export function createQqSender(config, send, clock = Date.now) {
-  const apiOrigin = config.qqApiProfile === 'tencent-sdk' ? 'https://api.sgroup.qq.com' : 'https://api.bot.qq.com';
-  const tokenOrigin = config.qqApiProfile === 'tencent-sdk' ? 'https://bots.qq.com' : 'https://api.bot.qq.com';
+  const apiOrigin = config.qqApiProfile === 'tencent-sandbox' ? 'https://sandbox.api.sgroup.qq.com' :
+    config.qqApiProfile === 'tencent-sdk' ? 'https://api.sgroup.qq.com' : 'https://api.bot.qq.com';
+  const tokenOrigin = config.qqApiProfile === 'documented' ? 'https://api.bot.qq.com' : 'https://bots.qq.com';
   let token, expires = 0, pending;
   async function getToken() {
     if (token && expires > clock() + 60000) return token;

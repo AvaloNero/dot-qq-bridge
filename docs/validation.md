@@ -6,13 +6,15 @@
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm run check` | 21 个 JavaScript 文件语法通过；package 和两个 plugin JSON 模板可解析 |
-| `npm test` | 62 项测试通过；0 失败、0 跳过 |
-| `npm run test:coverage` | 同一 62 项通过；全文件行 96.21%、分支 89.42%、函数 96.83% |
+| `npm run check` | 23 个 JavaScript 文件语法通过；package 和两个 plugin JSON 模板可解析 |
+| `node --test --test-concurrency=1 test/setup.test.js test/qq-outbound.test.js test/protocol.test.js` | 接入专项 31 项通过；0 失败 |
+| `npm run test:coverage` | 全量 70 项通过，0 失败/跳过；全文件行 96.45%、分支 90.38%、函数 97.01% |
 | `npm run simulate` | HTTP 闭环通过；一次事件、一次回复、正确原单聊、重复入站和回复幂等 |
 | `git diff --check` | 通过，无空白错误 |
 
 覆盖率是测试过程指标，不代表安全证明或真实客户端兼容。模拟回答固定为 `4`，没有模型推理。测试以公开 synthetic fixture、进程内临时密钥和临时 SQLite 文件运行，未创建真实账号凭据或绑定；临时库在验证后关闭清理。
+
+本次接入修复基于首版提交 `3578dd0`：补齐显式 QQ 沙箱 profile 与环境隔离、受认证只读预检，以及首次订阅拒绝中的脱敏 hostname/人工配置提示。8 项新增测试检查这些行为；事件在身份完整时可被发现，空白名单仍不订阅或联系任意回调，DNS/IP/TLS 防护保留。官方扫码仅新增静态参考说明，没有执行扫码或引入 connector SDK。
 
 ## 检查范围
 

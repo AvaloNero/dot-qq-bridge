@@ -44,6 +44,14 @@ export class Store {
       const existing = this.get('SELECT value FROM metadata WHERE key=?', 'binding');
       if (existing && existing.value !== binding) throw new Error('Stored owner/AppID/principal binding differs; do not reuse this database for a different identity');
       if (!existing && config.qqAppId && config.ownerOpenid && config.principal) this.run('INSERT INTO metadata VALUES (?,?)', 'binding', binding);
+      if (config.qqAppId && config.ownerOpenid && config.principal) {
+        const environment = config.qqApiProfile === 'tencent-sandbox' ? 'sandbox' : 'production';
+        const previous = this.get('SELECT value FROM metadata WHERE key=?', 'qq_environment');
+        if ((previous && previous.value !== environment) || (!previous && environment === 'sandbox' && this.get('SELECT count(*) AS n FROM messages').n)) {
+          throw new Error('QQ environment differs or existing messages have an unclassified environment; use a separate sandbox/production database');
+        }
+        if (!previous) this.run('INSERT INTO metadata VALUES (?,?)', 'qq_environment', environment);
+      }
     } catch (error) { this.db.close(); throw error; }
   }
   get(sql, ...params) { return this.db.prepare(sql).get(...params); }
