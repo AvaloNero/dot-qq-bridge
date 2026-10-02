@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "dot-qq-bridge",
+  "version": "0.1.0",
+  "description": "Verified owner-only QQ C2C text events and replies for the subscribing existing dot.",
+  "repository": "https://github.com/AvaloNero/dot-qq-bridge",
+  "license": "MIT"
+}
