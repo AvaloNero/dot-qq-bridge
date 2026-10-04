@@ -6,8 +6,8 @@
       "package": "dot-bridge-transport",
       "file": "README.md",
       "source_sha256": "a91e9845aadff13984b0014d15f27108820954fb8d68d92ea2f79114babdb192",
-      "packaged_sha256": "d41bb070da96747c0515dea84564df262cd465ad0d22589e55473ce2c46b5b48",
-      "adaptation": "packaged sibling-clone deployment documentation"
+      "packaged_sha256": "c0ca3304e7449a23d9a71f2fcea07c1743226f4425a45f3ec32d6e6129447d78",
+      "adaptation": "packaged sibling-clone deployment documentation; 2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
     },
     {
       "package": "dot-bridge-transport",
@@ -27,30 +27,30 @@
       "package": "dot-bridge-transport",
       "file": "status.js",
       "source_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
-      "packaged_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
-      "adaptation": null
+      "packaged_sha256": "9b85a8bf6c9c92637fe588c94234a998cd189d7b940298a2a09d3d2b8023a903",
+      "adaptation": "2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
     },
     {
       "package": "dot-bridge-transport",
       "file": "test/contract.test.js",
       "source_sha256": "5b76a3b7013d98408744617c13701ed50ee78bfa763132d09e81f33fb55c58eb",
-      "packaged_sha256": "5b76a3b7013d98408744617c13701ed50ee78bfa763132d09e81f33fb55c58eb",
-      "adaptation": null
+      "packaged_sha256": "3fbee24c2aa9674b2419ed7f4546d95adf6b4923dc6db7bc4836cf43850aa60f",
+      "adaptation": "2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
     },
     {
       "package": "dot-bridge-transport",
       "file": "test/network-safety.test.js",
       "source": "dot-bridge-tunnel/temporary/synthetic-events/test/transport.test.js",
       "source_sha256": "0e18f3ff24634cb5424a28e6d7353a3bfc13224cb36b249e688df75c2758fbd9",
-      "packaged_sha256": "53a83d2dd00578d7ee146de3603f624503cdc40067aee1de7d0daa1a3832b25b",
-      "adaptation": "32 shared-core regressions directly use the formal API and exact-host policy; omit 3 wrapper-only tests; add 6 offline NO_PROXY hostname/IP/CIDR matrices; implementation unchanged"
+      "packaged_sha256": "c8ecaa6da71ce23f639ad3bdf2977029be618ba1cf784b6abcf7175e48b1a789",
+      "adaptation": "32 shared-core regressions directly use the formal API and exact-host policy; omit 3 wrapper-only tests; add 6 offline NO_PROXY hostname/IP/CIDR matrices; implementation unchanged; 2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
     },
     {
       "package": "dot-bridge-transport",
       "file": "transport.js",
       "source_sha256": "12c0667e38460c7ffbf6f590233ca5bbce123f6c5d10eeb0e5b646d4dfd260a8",
-      "packaged_sha256": "12c0667e38460c7ffbf6f590233ca5bbce123f6c5d10eeb0e5b646d4dfd260a8",
-      "adaptation": null
+      "packaged_sha256": "8b6d691d399c0c116e4b89dab0af95f9f06ca0a8f204031c23880dab9bda70a6",
+      "adaptation": "2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
     },
     {
       "package": "dot-bridge-tunnel",

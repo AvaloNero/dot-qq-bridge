@@ -36,7 +36,8 @@ include both `test/*.test.js` files to retain its complete offline regression su
 
 From the QQ root, run `node --test packages/dot-bridge-transport/test/*.test.js`.
 The aggregate's source-copy test verifies the packaged snapshot recorded in
-`../source-copies.json`; runtime code is byte-identical to the reviewed source.
+`../source-copies.json`; original source hashes remain recorded, and intentional
+adaptations have separate reviewed packaged hashes and explanations.
 The complete QQ/Lark integration targets Node 24.15–24.x and requires their
 separately installed pinned dependencies. The shared package alone needs no
 third-party dependencies.
@@ -57,7 +58,7 @@ Options:
   maximum 30000 milliseconds
 - `maxBytes`: response-body cap, default/maximum 262144 bytes
 - `maxRequestBytes`: request-body cap, default/maximum 262144 bytes
-- `managedAdapter`: future reviewed code object with exactly one own `send`
+- `managedAdapter`: project-owned reviewed code object with exactly one own `send`
   function; no adapter implementation is included
 - `callbackPolicy`: default `exact-hosts`. Only the temporary authenticated
   synthetic experiment explicitly uses `authenticated-dynamic-public-https`
@@ -90,7 +91,7 @@ The synthetic wrapper retains stricter 8192-byte bodies and a 10000-ms deadline.
 - `reason`: `none`, `proxy_policy_unverified`, `proxy_unsupported`,
   `adapter_invalid` or `transport_unverified`
 - `proxy_configured`: boolean; null only for an unknown external sender
-- `destination_binding`: `direct_pinned`, `delegated_to_adapter` or `unverified`
+- `destination_binding`: `direct_pinned`, `delegated_unverified` or `unverified`
 - `network_checked`: always false
 
 Exports `callbackTransportStatusSchema` and
@@ -120,19 +121,23 @@ CIDR is this package's conservative deny extension, not a claim of native Node
 CIDR semantics. Selected proxy/adapter changes cannot reroute an existing sender.
 
 When a proxy is configured but no adapter exists, preflight is blocked with
-`proxy_policy_unverified`, and send fails before DNS. Business approval, an
-environment flag or a `verified` boolean cannot supply the missing platform
-contract. This package contains no proxy socket, CONNECT or fallback route.
+`proxy_policy_unverified`, and send fails before DNS. This is the application's
+pre-send guard, not a DNS/TLS failure, a proxy response, or evidence that the
+hosting product does not support callbacks. Business approval, an environment
+flag or a `verified` boolean cannot establish the proxy's address-binding
+behavior. This package contains no proxy socket, CONNECT or fallback route.
 
-A future supported managed adapter must be implemented and reviewed against its
-actual environment contract. Its presence is trusted dependency injection, not
+`managedAdapter` is this project's dependency-injection interface, not the name
+of an official component that must be released elsewhere. The project can
+implement it when the selected underlying connection primitive and its actual
+environment contract satisfy the required boundaries. Its presence is trusted dependency injection, not
 an independent proof that the proxy's policy or final destination is verified.
-Status remains `managed` / `delegated_to_adapter` / `network_checked:false`.
+Status remains `managed` / `delegated_unverified` / `network_checked:false`.
 
 Adapter signature: `managedAdapter.send(target, request)`.
 The deeply frozen validated target contains `url`, `hostname`, port 443, all
 vetted `addresses`, one `selectedAddress`, original-host TLS requirements, and
-`destinationBinding:'delegated_to_adapter'`. The request contains fixed POST,
+`destinationBinding:'delegated_unverified'`. The request contains fixed POST,
 projected signature headers, a copied body, selected proxy configuration for its
 intended use, AbortSignal, remaining authorization guard and size/time limits.
 It returns `{status, headers, body: Buffer}`, which the shared code validates

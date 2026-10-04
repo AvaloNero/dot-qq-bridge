@@ -64,7 +64,7 @@ def project_callback_transport(value):
         return None
     expected = {
         'direct': (True, 'none', False, 'direct_pinned'),
-        'managed': (True, 'none', True, 'delegated_to_adapter')}
+        'managed': (True, 'none', True, 'delegated_unverified')}
     if value['mode'] in expected:
         if (value['ready'],value['reason'],value['proxy_configured'],value['destination_binding']) != expected[value['mode']]: return None
     elif value['mode'] == 'blocked':

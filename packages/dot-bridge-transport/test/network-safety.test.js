@@ -441,7 +441,7 @@ test('managed routing requires a code-injected adapter and delegates immutable v
   const f = fixture({ proxyEnv: { HTTPS_PROXY: 'http://fixture-user:fixture-secret@proxy.example.test:3128' }, managedAdapter });
   assert.deepEqual(f.send.preflight(), {
     ready: true, mode: 'managed', reason: 'none', proxy_configured: true,
-    destination_binding: 'delegated_to_adapter', network_checked: false,
+    destination_binding: 'delegated_unverified', network_checked: false,
   });
   const result = await f.run();
   assert.equal(result.status, 200);
@@ -455,7 +455,7 @@ test('managed routing requires a code-injected adapter and delegates immutable v
   assert.deepEqual(target.addresses, [{ address: '93.184.216.34', family: 4 }]);
   assert.deepEqual(target.selectedAddress, target.addresses[0]);
   assert.deepEqual(target.tls, { servername: 'callbacks.example.test', rejectUnauthorized: true, minVersion: 'TLSv1.2' });
-  assert.equal(target.destinationBinding, 'delegated_to_adapter');
+  assert.equal(target.destinationBinding, 'delegated_unverified');
   for (const item of [target, target.addresses, ...target.addresses, target.selectedAddress, target.tls]) assert.equal(Object.isFrozen(item), true);
   assert.equal(request.method, 'POST');
   assert.deepEqual(request.body, BODY);

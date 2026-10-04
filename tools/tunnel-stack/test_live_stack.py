@@ -78,9 +78,10 @@ class LiveStackTests(unittest.TestCase):
 
     def test_only_explicit_channels_activate_and_environment_is_file_only(self):
         plan = {'channels': ['qq'], 'qq': self.plan['qq']}
-        inherited = {'HTTPS_PROXY': 'synthetic-managed-proxy', 'SSL_CERT_FILE': '/synthetic/ca',
+        inherited = {'HTTPS_PROXY': 'synthetic-managed-proxy', 'NO_PROXY': 'synthetic.invalid', 'SSL_CERT_FILE': '/synthetic/ca',
                      'SSL_CERT_DIR': '/synthetic/ca-directory', 'NODE_EXTRA_CA_CERTS': '/synthetic/node-ca.pem',
                      'NODE_USE_SYSTEM_CA': '1', 'NODE_OPTIONS': '--require=synthetic-forbidden-module',
+                     'NODE_TLS_REJECT_UNAUTHORIZED': '0', 'NODE_USE_ENV_PROXY': '1',
                      'QQ_BOT_SECRET': 'synthetic-forbidden', 'STORAGE_KEY': 'synthetic-forbidden',
                      'LARK_APP_SECRET': 'synthetic-forbidden', 'OPENAI_API_KEY': 'synthetic-forbidden'}
         command, _, env = stack.child_spec('qq', plan, inherited)
@@ -104,10 +105,14 @@ class LiveStackTests(unittest.TestCase):
             environments.append(stack.aggregate_spec(selected, inherited)[2])
             environments.append(stack.environment(inherited))
             for child_env in environments:
-                for key in ('HTTPS_PROXY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'NODE_USE_SYSTEM_CA'):
+                for key in ('HTTPS_PROXY', 'NO_PROXY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'NODE_USE_SYSTEM_CA'):
                     self.assertEqual(child_env[key], inherited[key])
-                self.assertNotIn('NODE_OPTIONS', child_env)
+                for key in ('NODE_OPTIONS', 'NODE_TLS_REJECT_UNAUTHORIZED', 'NODE_USE_ENV_PROXY', 'OPENAI_API_KEY'):
+                    self.assertNotIn(key, child_env)
                 self.assertTrue(all('synthetic-forbidden' not in value for value in child_env.values()))
+        absent = stack.environment({})
+        self.assertNotIn('NODE_EXTRA_CA_CERTS', absent)
+        self.assertNotIn('NODE_USE_SYSTEM_CA', absent)
 
     def test_library_run_gate_precedes_ports_processes_and_metadata(self):
         with mock.patch.object(stack, 'ports_available', side_effect=AssertionError('port touched')), \
@@ -141,7 +146,7 @@ class LiveStackTests(unittest.TestCase):
                 invalid={**blocked,key:value}
                 result=stack.project_provider_event(channel,{**event,'callback_transport':invalid})
                 self.assertNotIn('callback_transport',result)
-        for mode,binding,proxy in [('direct','direct_pinned',False),('managed','delegated_to_adapter',True)]:
+        for mode,binding,proxy in [('direct','direct_pinned',False),('managed','delegated_unverified',True)]:
             value={'ready':True,'mode':mode,'reason':'none','proxy_configured':proxy,'destination_binding':binding,'network_checked':False}
             self.assertEqual(stack.project_callback_transport(value),value)
         self.assertIsNone(stack.project_callback_transport({**blocked,'reason':'transport_unverified'}))

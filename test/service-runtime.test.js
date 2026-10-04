@@ -1,3 +1,5 @@
+import { createServiceSender, makePublicRequester } from '../src/network.js';
+import { callbackTransportStatus } from '../src/callback-transport.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { servicePreflight, startPersistentService } from '../src/service-runtime.js';
@@ -43,4 +45,29 @@ test('termination during asynchronous startup cleans up and never starts status 
 
 test('constructor failure is sanitized even for library callers', async () => {
   await assert.rejects(startPersistentService({}, { appFactory() { throw new Error('never-secret'); } }), error => error.message === 'Persistent service startup failed');
+});
+
+test('formal sender factory is constructed once and shared by service preflight and runtime', async () => {
+  let factoryCalls = 0, captured;
+  const managedAdapter = { send: () => assert.fail('No network is permitted') };
+  const settings = { ...env, HTTPS_PROXY: 'http://synthetic-proxy.invalid:3128' };
+  const send = createServiceSender({ proxyEnv: settings, requesterFactory(options) {
+    factoryCalls++; return makePublicRequester({ ...options, managedAdapter,
+      lookup: () => assert.fail('No DNS is permitted'), request: () => assert.fail('No network is permitted') });
+  } });
+  const before = servicePreflight(settings, { send });
+  assert.equal(before.callback_transport.mode, 'managed');
+  const service = await startPersistentService({}, { send, appFactory(_config, options) {
+    captured = options.send;
+    return { bridge: { ready: () => false, callbackTransport: () => callbackTransportStatus(options.send),
+      store: { activeSubscription: () => null } }, attachGateway() {}, async listen() {}, async close() {} };
+  }, gatewayFactory: () => ({ status: () => ({ connected: false }), async start() {} }), repeat: () => 1, cancel() {} });
+  try {
+    assert.equal(factoryCalls, 1); assert.equal(captured, send);
+    assert.deepEqual(service.snapshot().callback_transport, before.callback_transport);
+    managedAdapter.send = () => assert.fail('Mutated adapter must not run');
+    assert.equal(servicePreflight(settings, { send }).callback_transport.reason, 'adapter_invalid');
+    assert.deepEqual(service.snapshot().callback_transport, servicePreflight(settings, { send }).callback_transport);
+    assert.equal(service.snapshot().callback_transport.network_checked, false);
+  } finally { await service.close(); }
 });

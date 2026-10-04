@@ -4,12 +4,12 @@ import { acquireModeLock, bridgeMode } from './bridge-mode.js';
 import { createSitesApp } from './sites-runtime.js';
 import { QqGateway } from './gateway.js';
 import { assertApprovedTunnelLive, validateTunnelServiceOperation } from './tunnel-service-operation.js';
-import { preflightCallbackTransport } from '../packages/dot-bridge-transport/index.js';
+import { createServiceSender } from './network.js';
 import { callbackTransportStatus } from './callback-transport.js';
 
 const REQUIRED = ['QQ_APP_ID', 'QQ_BOT_SECRET', 'QQ_OWNER_OPENID', 'MCP_OWNER_SUBJECT', 'STORAGE_KEY',
   'PUBLIC_ORIGIN', 'OAUTH_ISSUER', 'OAUTH_JWKS_URL', 'OAUTH_AUDIENCE', 'DATABASE_PATH'];
-export function servicePreflight(env) {
+export function servicePreflight(env, { send = createServiceSender({ proxyEnv: env }) } = {}) {
   let selected; try { selected = bridgeMode(env); } catch { selected = 'invalid'; }
   const tunnelLive = selected === 'tunnel' && env.AUTH_MODE === 'tunnel-service';
   const required = tunnelLive ? ['QQ_APP_ID','QQ_CREDENTIALS_FILE','QQ_API_PROFILE','STORAGE_KEY_FILE','DATABASE_PATH','BRIDGE_LOCK_DIRECTORY','TUNNEL_SERVICE_KEY_FILE','TUNNEL_SERVICE_OWNER_ID','TUNNEL_SERVICE_OPERATION'] : selected === 'sites' ? ['QQ_APP_ID','QQ_BOT_SECRET','QQ_OWNER_OPENID','MCP_OWNER_SUBJECT','STORAGE_KEY','DATABASE_PATH','BRIDGE_LOCK_DIRECTORY','SITES_ORIGIN','SITES_BINDING_ID','SITES_SERVICE_CREDENTIAL','SITES_CONNECTOR_CREDENTIAL'] : [...REQUIRED, 'BRIDGE_LOCK_DIRECTORY'];
@@ -26,7 +26,7 @@ export function servicePreflight(env) {
     if (config && (Buffer.from(config.storageKey, 'base64').length !== 32 || Buffer.from(config.storageKey, 'base64').toString('base64') !== config.storageKey)) invalid.push('STORAGE_KEY');
   }
   return { ready_to_start: !missing.length && !invalid.length, missing_settings: missing, invalid_settings: invalid,
-    callback_transport: preflightCallbackTransport({ proxyEnv: env }),
+    callback_transport: callbackTransportStatus(send),
     callback_allowlist_configured: !!config?.callbackHosts.length, network_checked: false, current_dot_connected: false };
 }
 export function serviceSnapshot(app, gateway, clock = Date.now) {
@@ -52,7 +52,7 @@ export function serviceSnapshot(app, gateway, clock = Date.now) {
 // Operator/supervisor supplies explicitly authorized configuration and owns log retention/restart.
 export async function startPersistentService(config, { appFactory = config.bridgeMode === 'sites' ? createSitesApp : createApp, gatewayFactory = (bridge, options) => new QqGateway(bridge, options),
   report = () => {}, clock = Date.now, repeat = setInterval, cancel = clearInterval, signal,
-  onClosed = () => {}, onStopFailure = () => {}, approvedLive = false } = {}) {
+  onClosed = () => {}, onStopFailure = () => {}, approvedLive = false, send } = {}) {
   if (signal?.aborted) throw new Error('Persistent service startup cancelled');
   assertApprovedTunnelLive(config, approvedLive);
   validateTunnelServiceOperation(config);
@@ -96,7 +96,9 @@ export async function startPersistentService(config, { appFactory = config.bridg
   const onAbort = () => { void close().catch(() => {}); };
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
-    app = appFactory(config, { approvedLive });
+    send ??= createServiceSender();
+    if (typeof send !== 'function') throw new TypeError('Invalid service sender');
+    app = appFactory(config, { approvedLive, send });
     gateway = gatewayFactory(app.bridge, { report: () => { if (!stopped) tick(); } });
     app.attachGateway(gateway); await app.listen();
     if (stopped || signal?.aborted) throw new Error();

@@ -1,10 +1,11 @@
+import { checkedOptions, normalizeRequesterOptions } from './requester-options.js';
 import { configuredProviderProxy, makeProviderRequester } from './provider-network.js';
 import https from 'node:https';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { BridgeError } from './common.js';
 import { makeCallbackTransport } from '../packages/dot-bridge-transport/index.js';
-import { callbackTransportFailure } from './callback-transport.js';
+import { callbackTransportFailure, callbackTransportStatus } from './callback-transport.js';
 
 const fail = (message, reason = 'connection_refused') => new BridgeError(message, { code: -32015, data: { reason }, retryable: true });
 export function publicAddress(address) {
@@ -52,10 +53,11 @@ export async function resolveDestination(raw, hosts, lookup = dnsLookup) {
   }
   return { url, answers };
 }
-export function makePublicRequester({ lookup = dnsLookup, request = https.request, timeoutMs = 10000, maxBytes = 262144, proxyEnv = process.env, providerTimeoutMs = 30000,
-  providerSend = makeProviderRequester({ env: proxyEnv, timeoutMs: providerTimeoutMs, maxBytes }), managedCallbackAdapter,
-  callbackTimeoutMs = Math.min(timeoutMs, 10000), callbackMaxBytes = maxBytes,
-  callbackTransport = makeCallbackTransport({ lookup, request, timeoutMs: callbackTimeoutMs, maxBytes: callbackMaxBytes, proxyEnv, managedAdapter: managedCallbackAdapter }) } = {}) {
+export function makePublicRequester(options = {}) {
+  const { lookup = dnsLookup, request = https.request, timeoutMs = 10000, maxBytes = 262144, proxyEnv = process.env, providerTimeoutMs = 30000,
+    providerSend = makeProviderRequester({ env: proxyEnv, timeoutMs: providerTimeoutMs, maxBytes }), managedAdapter,
+    callbackTimeoutMs = Math.min(timeoutMs, 10000), callbackMaxBytes = maxBytes,
+    callbackTransport = makeCallbackTransport({ lookup, request, timeoutMs: callbackTimeoutMs, maxBytes: callbackMaxBytes, proxyEnv, managedAdapter }) } = normalizeRequesterOptions(options);
   const send = async function send(raw, { method = 'POST', headers = {}, body = Buffer.alloc(0), hosts, beforeConnect = () => {}, purpose, signal }) {
     if (purpose === 'callback') {
       try { return await callbackTransport(raw, { method, headers, body, hosts, beforeConnect, signal }); }
@@ -94,5 +96,16 @@ export function makePublicRequester({ lookup = dnsLookup, request = https.reques
     });
   };
   send.callbackPreflight = () => callbackTransport.preflight?.();
+  send.callbackTransportStatus = () => callbackTransportStatus(send);
+  return send;
+}
+
+// A launcher may supply a reviewed code factory, never a module name from env.
+// Construct once and pass the returned sender to both preflight and service.
+export function createServiceSender(options = {}) {
+  const { proxyEnv = process.env, requesterFactory = makePublicRequester } = checkedOptions(options, ['proxyEnv', 'requesterFactory'], 'Invalid service sender options');
+  if (typeof requesterFactory !== 'function') throw new TypeError('Invalid service requester factory');
+  const send = requesterFactory({ proxyEnv });
+  if (typeof send !== 'function') throw new TypeError('Invalid service sender');
   return send;
 }

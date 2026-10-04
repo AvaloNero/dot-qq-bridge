@@ -9,6 +9,9 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'source-copies.json'), 'utf8'));
 const adaptations = new Set([
   'dot-bridge-transport/README.md',
+  'dot-bridge-transport/status.js',
+  'dot-bridge-transport/transport.js',
+  'dot-bridge-transport/test/contract.test.js',
   'dot-bridge-transport/test/network-safety.test.js',
   'dot-bridge-tunnel/README.md',
   'dot-bridge-tunnel/src/auth.js',
@@ -18,7 +21,7 @@ const adaptations = new Set([
   'dot-bridge-tunnel/test/sibling-contract.test.js'
 ]);
 
-test('packaged sources match the SHA-256 snapshot with explicitly declared layout and Windows adaptations', () => {
+test('packaged sources match reviewed hashes and declare layout, Windows and transport adaptations', () => {
   assert.equal(manifest.version, 1);
   assert.equal(manifest.files.length, 22);
   const seen = new Set();

@@ -73,7 +73,7 @@ test('direct pin validates every answer and preserves original TLS identity with
 test('injected managed adapter receives immutable validated target and current revocation gate; no built-in route is used',async()=>{
   let directCalls=0,adapterCalls=0;const managedAdapter={send:async(target,request)=>{
     adapterCalls++;assert.ok(Object.isFrozen(target));assert.ok(Object.isFrozen(target.addresses));assert.ok(Object.isFrozen(target.addresses[0]));assert.ok(Object.isFrozen(target.tls));
-    assert.equal(target.url,URL);assert.equal(target.hostname,HOST);assert.equal(target.port,443);assert.equal(target.destinationBinding,'delegated_to_adapter');assert.equal(target.tls.rejectUnauthorized,true);assert.equal(target.tls.servername,HOST);
+    assert.equal(target.url,URL);assert.equal(target.hostname,HOST);assert.equal(target.port,443);assert.equal(target.destinationBinding,'delegated_unverified');assert.equal(target.tls.rejectUnauthorized,true);assert.equal(target.tls.servername,HOST);
     assert.equal(request.method,'POST');assert.equal(request.headers.host,HOST);assert.equal(request.headers.authorization,undefined);assert.ok(request.signal instanceof AbortSignal);await request.beforeConnect();return response(202,Buffer.from('{}'),{'x-private':'PRIVATE_UPSTREAM'});
   }};
   const send=makeCallbackTransport({proxyEnv:PROXY,managedAdapter,lookup:async()=>[{address:'93.184.216.34',family:4}],request:()=>{directCalls++;throw Error('no direct');}});

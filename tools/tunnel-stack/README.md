@@ -48,9 +48,14 @@ On Windows pass `--node 'C:\Program Files\nodejs\node.exe'`; its directory is
 the only child PATH entry. Windows additionally receives SystemRoot/WINDIR, a
 private USERPROFILE, the selected Python path and the private supervision flag.
 
-The CA allowlist explicitly preserves inherited `SSL_CERT_FILE`, `SSL_CERT_DIR`,
-`NODE_EXTRA_CA_CERTS` and `NODE_USE_SYSTEM_CA`. It does not set these values,
-install certificates, disable TLS verification or forward `NODE_OPTIONS`.
+The allowlist includes `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS` and
+`NODE_USE_SYSTEM_CA` when already present. These retain the platform's inherited
+CA selection; the launcher does not invent a CA path or turn on system roots.
+`NODE_OPTIONS`, `NODE_TLS_REJECT_UNAUTHORIZED` and global proxy-agent overrides
+remain excluded. CA inheritance is independent of callback address binding and
+does not turn a blocked callback adapter into an approved route. See the
+[Node 24 CA environment contract](https://nodejs.org/download/release/v24.19.0/docs/api/cli.html#node_extra_ca_certsfile)
+and [system CA option](https://nodejs.org/download/release/v24.19.0/docs/api/cli.html#node_use_system_ca1).
 
 ## Non-secret external configuration
 

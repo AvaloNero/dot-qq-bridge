@@ -72,7 +72,7 @@ function blocked(reason,configured){return projectCallbackTransportStatus({ready
 export function preflightCallbackTransport(options={}){
   let configured=false;try{if(!options||typeof options!=='object'||Array.isArray(options))throw error('invalid_options');const env=options.proxyEnv===undefined?process.env:options.proxyEnv;if(!env||typeof env!=='object')throw error('proxy_unsupported');configured=PROXY_NAMES.some(name=>present(env[name]));const proxy=configuredProxy(env);
     if(!adapterValid(options.managedAdapter))return blocked('adapter_invalid',configured);if(proxy&&!options.managedAdapter)return blocked('proxy_policy_unverified',true);
-    return projectCallbackTransportStatus({ready:true,mode:proxy?'managed':'direct',reason:'none',proxy_configured:!!proxy,destination_binding:proxy?'delegated_to_adapter':'direct_pinned',network_checked:false});
+    return projectCallbackTransportStatus({ready:true,mode:proxy?'managed':'direct',reason:'none',proxy_configured:!!proxy,destination_binding:proxy?'delegated_unverified':'direct_pinned',network_checked:false});
   }catch{return blocked('proxy_unsupported',configured);}
 }
 const REQUEST_HEADERS=new Set(['content-type','webhook-id','webhook-timestamp','webhook-signature','x-mcp-subscription-id']);
@@ -121,7 +121,7 @@ export function makeCallbackTransport(options={}){
       if(bypassMatches(proxy,url.hostname,result.map(a=>a.address)))throw error('proxy_unsupported');
       const addresses=Object.freeze(result.map(a=>Object.freeze({address:a.address,family:a.family}))),pinned=addresses[0];
       if(proxy){
-        const target=Object.freeze({url:url.href,hostname:url.hostname,port:443,addresses,selectedAddress:pinned,tls:Object.freeze({servername:url.hostname,rejectUnauthorized:true,minVersion:'TLSv1.2'}),destinationBinding:'delegated_to_adapter'});
+        const target=Object.freeze({url:url.href,hostname:url.hostname,port:443,addresses,selectedAddress:pinned,tls:Object.freeze({servername:url.hostname,rejectUnauthorized:true,minVersion:'TLSv1.2'}),destinationBinding:'delegated_unverified'});
         const adapterRequest=Object.freeze({method:'POST',headers:Object.freeze({...outgoing}),body:Buffer.from(payload),proxy:Object.freeze({url:proxy.url.href,authorization:proxy.authorization??null}),beforeConnect:operation=>gate(operation),signal:cancellation.signal,timeoutMs,maxBytes});
         const result=await wait(gate(()=>adapterSend.call(managedAdapter,target,adapterRequest)),'adapter_failed');await gate();active();return projectResponse(result,maxBytes);
       }

@@ -90,7 +90,7 @@ test('real app uses shared managed adapter for signed challenge and queued event
       await request.beforeConnect(); assert.equal(request.signal.aborted, false);
       assert.equal(target.hostname, 'receiver.example.com'); assert.equal(target.selectedAddress.address, '8.8.8.8');
       assert.equal(target.tls.servername, target.hostname); assert.equal(target.tls.rejectUnauthorized, true);
-      assert.equal(target.destinationBinding, 'delegated_to_adapter'); assert.equal(Object.isFrozen(target), true);
+      assert.equal(target.destinationBinding, 'delegated_unverified'); assert.equal(Object.isFrozen(target), true);
       assert.equal(request.headers.host, target.hostname); assert.equal(request.headers['proxy-authorization'], undefined);
       const body = JSON.parse(request.body); calls.push(body);
       return { status: body.type === 'verification' ? 200 : eventStatus, headers: { 'content-type': 'application/json' },
@@ -104,7 +104,7 @@ test('real app uses shared managed adapter for signed challenge and queued event
   assert.equal(f.app.bridge.store.get("SELECT state FROM jobs WHERE kind='event'").state, 'delivered');
   assert.equal(calls.length, 3); assert.deepEqual(calls[1], calls[2]); assert.equal(calls[1].data.text, longText); assert.equal(dns, 3);
   const setup = (await f.post('tools/call', { name: 'check_bridge_setup', arguments: {} })).body.result.structuredContent;
-  assert.deepEqual(setup.callback_transport, { ready: true, mode: 'managed', reason: 'none', proxy_configured: true, destination_binding: 'delegated_to_adapter', network_checked: false });
+  assert.deepEqual(setup.callback_transport, { ready: true, mode: 'managed', reason: 'none', proxy_configured: true, destination_binding: 'delegated_unverified', network_checked: false });
   const next = qqPayload(f.now + 1001, { id: 'second-message', content: 'second synthetic message' }); next.id = 'second-source-event';
   f.app.bridge.acceptQq(next, 'synthetic-managed-next'); eventStatus = 410; await f.app.bridge.tick();
   assert.equal(f.app.bridge.store.activeSubscription(f.now + 1001), undefined);
