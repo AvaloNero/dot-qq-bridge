@@ -1,0 +1,21 @@
+# Single main-channel profile. Never run both channel profiles simultaneously.
+# No plaintext credentials; only official client file references.
+config_version: 1
+control_plane:
+  base_url: https://api.openai.com
+  tunnel_id: REPLACE_WITH_YOUR_TUNNEL_ID
+  api_key: file:/ABSOLUTE/PRIVATE_DIRECTORY/tunnel/runtime-api-key
+  poll_channels: [main]
+mcp:
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:3101/mcp
+  extra_headers:
+    X-Dot-Bridge-Service-Key: file:/ABSOLUTE/PRIVATE_DIRECTORY/tunnel/qq-service-key
+log:
+  level: info
+  format: json
+health:
+  listen_addr: 127.0.0.1:0
+admin_ui:
+  open_browser: false

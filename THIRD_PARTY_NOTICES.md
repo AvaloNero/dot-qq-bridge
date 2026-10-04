@@ -10,3 +10,7 @@ Reviewed, without importing or bundling runtime source:
 - [Standard Webhooks specification](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md) and the MCP/OpenAI/QQ protocol sources linked in [docs/protocol.md](docs/protocol.md). No Standard Webhooks library source is bundled.
 
 The deployment template uses the [official Node Docker image](https://github.com/nodejs/docker-node). No image was built or redistributed during this work. A future deployed image carries its own operating-system and Node component licenses; retain those notices when distributing it.
+
+## Official QR dependency (2026-10-02)
+
+`@tencent-connect/qqbot-connector@1.2.0` is installed as an ordinary pinned npm dependency using its publicly documented API. Its metadata remains UNLICENSED and no separate license file is bundled. Tencent's MIT OpenClaw wrapper imports the same package, but does not relicense it. No dependency implementation is copied into this source tree or redistributed by this local commit. Normal integration evidence and publication limits are documented in docs/official-qr.md. Its transitive qrcode-terminal dependency is fixed by package-lock.json.

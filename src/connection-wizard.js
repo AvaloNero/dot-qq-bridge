@@ -1,7 +1,7 @@
 import { BridgeError } from './common.js';
 
 export const connectorReview = Object.freeze({ package: '@tencent-connect/qqbot-connector', version: '1.2.0',
-  npm_license: 'UNLICENSED', bundled_license_file: false, permitted_use: 'requires_separate_review', installed: false });
+  npm_license: 'UNLICENSED', bundled_license_file: false, permitted_use: 'documented_public_sdk_integration_only', installed: true });
 
 function identifier(value) { return typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value); }
 // Only validate an operator-provided result. This neither writes configuration nor trusts
@@ -23,7 +23,7 @@ export function inspectQrCredentials(credentials, { appId, confirmedOwnerOpenid,
     }
   } else if (ownerEvidence !== 'verified-qq-message') throw new BridgeError('QR returned no owner; independently verified QQ identity evidence is required');
   // An in-memory candidate, never an automatic credential/owner binding.
-  return Object.freeze({ appId: selected.appId, appSecret: selected.appSecret, ownerOpenid: confirmedOwnerOpenid });
+  return Object.freeze({ appId: selected.appId, appSecret: selected.appSecret, ownerOpenid: confirmedOwnerOpenid, ownerEvidence });
 }
 export function redactedConnectionResult(candidate) {
   return { credentials_valid: !!candidate, single_owner_valid: !!candidate, real_scan_started: false,
@@ -36,7 +36,7 @@ export function connectionPlan() {
       'Explicitly confirm one returned app-specific owner openid, or an independently verified QQ message identity',
       'Configure secrets in the specifically approved cloud runtime', 'Approve tunnel/endpoint access, plugin link, subscriptions and fee limit'],
     alternative: 'After approval, use existing official QQ console credentials and a verified owner openid; no QR package is required for Gateway.',
-    next_step: 'Review docs/connection.md. Use --demo for a synthetic interface exercise or --inspect FILE for an already authorized local result. --scan is disabled pending connector licensing review.' };
+    next_step: 'Review docs/connection.md. Use --demo for a synthetic interface exercise or --inspect FILE for an already authorized local result. Use scripts/qq-official-scan.js --plan for the source-integrated official SDK scanner.' };
 }
 
 // Prepared against the public startQrConnect callback contract. No connector package is

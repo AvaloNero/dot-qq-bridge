@@ -164,7 +164,7 @@ test('Gateway WSS connector pins public DNS answers, checks TLS and refuses redi
   let constructed;
   class FakeWebSocket { constructor(url, options) { constructed = { url, options }; } }
   const answers = [{ address: '8.8.8.8', family: 4 }]; let authorized = false;
-  const connect = makePublicWebSocket({ lookup: async () => answers, WebSocketClass: FakeWebSocket });
+  const connect = makePublicWebSocket({ proxyEnv: {}, lookup: async () => answers, WebSocketClass: FakeWebSocket });
   await connect('wss://api.bot.qq.com/websocket/', { hosts: ['api.bot.qq.com'], beforeConnect: () => { authorized = true; } });
   assert.equal(authorized, true); assert.equal(constructed.options.rejectUnauthorized, true);
   assert.equal(constructed.options.servername, 'api.bot.qq.com'); assert.equal(constructed.options.followRedirects, false);
@@ -175,14 +175,14 @@ test('Gateway WSS connector pins public DNS answers, checks TLS and refuses redi
 
 test('Gateway connector refuses non-WSS, unexpected hosts, private DNS and revocation after DNS', async () => {
   let dns = 0, connects = 0;
-  const connect = makePublicWebSocket({ lookup: async () => { dns++; return [{ address: '127.0.0.1', family: 4 }]; },
+  const connect = makePublicWebSocket({ proxyEnv: {}, lookup: async () => { dns++; return [{ address: '127.0.0.1', family: 4 }]; },
     WebSocketClass: class { constructor() { connects++; } } });
   for (const raw of ['https://api.bot.qq.com/x', 'ws://api.bot.qq.com/x', 'wss://evil.example.com/x', 'wss://127.0.0.1/x',
     'wss://api.bot.qq.com:8443/x', 'wss://user:secret@api.bot.qq.com/x', 'wss://api.bot.qq.com/x#secret']) {
     await assert.rejects(connect(raw, { hosts: ['api.bot.qq.com'] }));
   }
   assert.equal(dns, 0); await assert.rejects(connect('wss://api.bot.qq.com/x', { hosts: ['api.bot.qq.com'] })); assert.equal(connects, 0);
-  const vetted = makePublicWebSocket({ lookup: async () => [{ address: '8.8.8.8', family: 4 }], WebSocketClass: class { constructor() { connects++; } } });
+  const vetted = makePublicWebSocket({ proxyEnv: {}, lookup: async () => [{ address: '8.8.8.8', family: 4 }], WebSocketClass: class { constructor() { connects++; } } });
   await assert.rejects(vetted('wss://api.bot.qq.com/x', { hosts: ['api.bot.qq.com'], beforeConnect: () => { throw new Error('revoked'); } }));
   assert.equal(connects, 0);
 });

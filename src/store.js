@@ -4,16 +4,22 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, canonical, hash } from './common.js';
 import { Vault } from './signatures.js';
+import { privateDatabasePath } from './private-files.js';
+import { destinationUrl } from './network.js';
 
 export class Store {
   constructor(config) {
     this.config = config;
     this.vault = new Vault(config.storageKey);
-    if (config.dbPath !== ':memory:') {
+    if (config.authMode === 'tunnel-service' && !config.tunnelServiceReadinessOnly) {
+      this.privatePath = privateDatabasePath(config.dbPath, { create: true });
+    } else if (config.dbPath !== ':memory:') {
       fs.mkdirSync(path.dirname(config.dbPath), { recursive: true, mode: 0o700 });
       if (!fs.existsSync(config.dbPath)) fs.closeSync(fs.openSync(config.dbPath, 'wx', 0o600));
     }
-    this.db = new DatabaseSync(config.dbPath);
+    try { this.db = new DatabaseSync(this.privatePath?.path ?? config.dbPath); }
+    catch (error) { this.privatePath?.close(); throw error; }
+    try {
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS subscriptions (
@@ -37,7 +43,14 @@ export class Store {
       CREATE TABLE IF NOT EXISTS rates (kind TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS rate_window ON rates(kind,at);
       CREATE TABLE IF NOT EXISTS gateway_lease (slot INTEGER PRIMARY KEY CHECK(slot=1), token TEXT NOT NULL, expires INTEGER NOT NULL);`);
-    try {
+      for (const table of ['subscriptions', 'messages']) {
+        if (!this.all(`PRAGMA table_info(${table})`).some(column => column.name === 'generation')) this.db.exec(`ALTER TABLE ${table} ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`);
+      }
+      const bridgeMode = config.bridgeMode || 'tunnel';
+      const storedMode = this.get('SELECT value FROM metadata WHERE key=?', 'bridge_mode');
+      if (storedMode && storedMode.value !== bridgeMode) throw new Error('Stored bridge mode differs; explicit migration is required');
+      if (!storedMode && bridgeMode === 'sites' && this.get('SELECT count(*) AS n FROM metadata').n > 0) throw new Error('Legacy database requires explicit mode migration');
+      if (!storedMode) this.run('INSERT INTO metadata VALUES (?,?)', 'bridge_mode', bridgeMode);
       const check = this.get('SELECT value FROM metadata WHERE key=?', 'vault');
       if (check) this.vault.open(check.value, 'metadata');
       else this.run('INSERT INTO metadata VALUES (?,?)', 'vault', this.vault.seal({ version: 1 }, 'metadata'));
@@ -53,7 +66,7 @@ export class Store {
         }
         if (!previous) this.run('INSERT INTO metadata VALUES (?,?)', 'qq_environment', environment);
       }
-    } catch (error) { this.db.close(); throw error; }
+    } catch (error) { this.db.close(); this.privatePath?.close(); throw error; }
   }
   get(sql, ...params) { return this.db.prepare(sql).get(...params); }
   all(sql, ...params) { return this.db.prepare(sql).all(...params); }
@@ -100,21 +113,32 @@ export class Store {
   }
   activeSubscription(now) {
     const row = this.get('SELECT id FROM subscriptions WHERE active=1 AND expires>? AND principal=?', now, this.config.principal);
-    return row ? this.subscription(row.id) : undefined;
+    const subscription = row ? this.subscription(row.id) : undefined;
+    if (subscription && this.config.bridgeMode !== 'sites') {
+      try { destinationUrl(subscription.url, this.config.callbackHosts); } catch { return undefined; }
+    }
+    return subscription;
   }
-  saveSubscription(subscription, now) {
+  subscriptionEpoch() { return Number(this.get('SELECT value FROM metadata WHERE key=?', 'subscription_epoch')?.value ?? 0); }
+  bumpSubscriptionEpoch() { this.run('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', 'subscription_epoch', String(this.subscriptionEpoch() + 1)); }
+  saveSubscription(subscription, now, expectedEpoch = this.subscriptionEpoch()) {
     return this.tx(() => {
+      if (this.subscriptionEpoch() !== expectedEpoch) throw new BridgeError('Subscription changed during verification', { code: -32012 });
       const other = this.get('SELECT id FROM subscriptions WHERE active=1 AND expires>? AND id<>?', now, subscription.id);
       if (other) throw new BridgeError('Only one current-dot subscription is allowed', { code: -32013, data: { limit: 'subscriptions', max: 1 } });
+      const existing = this.get('SELECT active,expires,generation FROM subscriptions WHERE id=?', subscription.id);
+      const generation = existing ? existing.generation + (existing.active && existing.expires > now ? 0 : 1) : 1;
       const callback = this.vault.seal({ url: subscription.url, secret: subscription.secret,
         oldSecret: subscription.oldSecret ?? null, oldSecretUntil: subscription.oldSecretUntil ?? 0 }, `subscription:${subscription.id}`);
-      this.run(`INSERT INTO subscriptions(id,principal,callback,expires,verified_until,active) VALUES (?,?,?,?,?,1)
-        ON CONFLICT(id) DO UPDATE SET callback=excluded.callback,expires=excluded.expires,verified_until=excluded.verified_until,active=1`,
-        subscription.id, subscription.principal, callback, subscription.expires, subscription.verified_until);
+      this.run(`INSERT INTO subscriptions(id,principal,callback,expires,verified_until,active,generation) VALUES (?,?,?,?,?,1,?)
+        ON CONFLICT(id) DO UPDATE SET callback=excluded.callback,expires=excluded.expires,verified_until=excluded.verified_until,active=1,generation=excluded.generation`,
+        subscription.id, subscription.principal, callback, subscription.expires, subscription.verified_until, generation);
+      this.bumpSubscriptionEpoch();
     });
   }
   unsubscribe(id) {
     this.tx(() => {
+      this.bumpSubscriptionEpoch();
       this.run('UPDATE subscriptions SET active=0 WHERE id=? AND principal=?', id, this.config.principal);
       this.run("UPDATE jobs SET state='cancelled',last_error='unsubscribed',lease_token=NULL WHERE subscription_id=? AND state IN ('pending','processing')", id);
     });
@@ -140,9 +164,9 @@ export class Store {
       this.capacity();
       this.rate('inbound', this.config.inboundPerMinute, now);
       const eventId = `evt_${hash(`${this.config.qqAppId}:${message.id}`)}`;
-      this.run(`INSERT INTO messages(id,source_event_id,event_id,principal,owner,subscription_id,occurred_at,expires,received,text)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`, message.id, message.sourceEventId, eventId, this.config.principal,
-        message.owner, subscription.id, message.timestamp, message.expires, now, this.vault.seal(message.text, `message:${message.id}`));
+      this.run(`INSERT INTO messages(id,source_event_id,event_id,principal,owner,subscription_id,occurred_at,expires,received,text,generation)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, message.id, message.sourceEventId, eventId, this.config.principal,
+        message.owner, subscription.id, message.timestamp, message.expires, now, this.vault.seal(message.text, `message:${message.id}`), subscription.generation ?? (this.config.bridgeMode === 'sites' ? 1 : undefined));
       this.run('INSERT INTO jobs(id,kind,message_id,subscription_id,next_at) VALUES (?,?,?,?,?)', `event:${eventId}`, 'event', message.id, subscription.id, now);
       this.run('INSERT INTO replays VALUES (?,?)', replayId, now + 2 * this.config.signatureSkewSeconds * 1000);
       return 'queued';
@@ -155,7 +179,9 @@ export class Store {
   authorizeMessage(id, principal, now) {
     const message = this.message(id), subscription = message && this.subscription(message.subscription_id);
     if (!message || message.principal !== principal || message.owner !== this.config.ownerOpenid || !subscription?.active ||
-        subscription.expires <= now || subscription.principal !== principal || !message.attempted_at) {
+        subscription.expires <= now || subscription.principal !== principal ||
+        (subscription.generation ?? (this.config.bridgeMode === 'sites' ? 1 : undefined)) !== message.generation ||
+        this.activeSubscription(now)?.id !== subscription.id || !message.attempted_at) {
       throw new BridgeError('Message unavailable to this subscription', { code: -32012 });
     }
     return message;
@@ -216,5 +242,5 @@ export class Store {
       this.run('DELETE FROM rates WHERE at<=?', now - 60000);
     });
   }
-  close() { this.db.close(); }
+  close() { try { this.db.close(); } finally { this.privatePath?.close(); } }
 }

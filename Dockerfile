@@ -7,7 +7,8 @@ RUN mkdir -p /data && chown node:node /data /app
 COPY --chown=node:node package.json package-lock.json LICENSE THIRD_PARTY_NOTICES.md ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org && npm cache clean --force
 COPY --chown=node:node src/ ./src/
-COPY --chown=node:node scripts/status.js ./scripts/status.js
+COPY --chown=node:node scripts/ ./scripts/
+COPY --chown=node:node packages/dot-bridge-transport/ ./packages/dot-bridge-transport/
 USER node
 VOLUME ["/data"]
 EXPOSE 3000

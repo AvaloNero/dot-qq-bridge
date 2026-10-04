@@ -1,3 +1,4 @@
+import { configuredProviderProxy, createProviderProxyAgent, PROVIDER_HOSTS } from './provider-network.js';
 import WebSocket from 'ws';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { BridgeError } from './common.js';
@@ -13,9 +14,21 @@ export function gatewayUrl(raw, hosts) {
   // Use the exact host policy and public-IP checks from the HTTP requester.
   return { url, httpsUrl, hosts };
 }
-export function makePublicWebSocket({ lookup = dnsLookup, WebSocketClass = WebSocket, timeoutMs = 10000 } = {}) {
+export function makePublicWebSocket({ lookup = dnsLookup, WebSocketClass = WebSocket, timeoutMs = 10000, proxyEnv = process.env, proxyAgentFactory = createProviderProxyAgent } = {}) {
   return async (raw, { hosts, beforeConnect = () => {} }) => {
     const { url, httpsUrl } = gatewayUrl(raw, hosts);
+    if (configuredProviderProxy(proxyEnv)) {
+      if (!hosts.includes(url.hostname) || !PROVIDER_HOSTS.includes(url.hostname)) throw new BridgeError('QQ proxy gateway destination is not approved');
+      const agent = proxyAgentFactory({ env: proxyEnv, allowedHost: host => hosts.includes(host) && PROVIDER_HOSTS.includes(host) });
+      try {
+        beforeConnect();
+        const socket = new WebSocketClass(url.href, { agent, headers: { 'User-Agent': 'dot-qq-bridge/0.1.0' }, handshakeTimeout: timeoutMs,
+          maxPayload: 32768, followRedirects: false, perMessageDeflate: false, rejectUnauthorized: true, servername: url.hostname });
+        socket.once('close', () => agent.destroy());
+        socket.once('error', () => agent.destroy());
+        return socket;
+      } catch { agent.destroy(); throw new BridgeError('QQ proxy gateway connection failed', { retryable: true }); }
+    }
     let timer, destination;
     try {
       destination = await Promise.race([resolveDestination(httpsUrl.href, hosts, lookup),
@@ -24,7 +37,7 @@ export function makePublicWebSocket({ lookup = dnsLookup, WebSocketClass = WebSo
     beforeConnect();
     const answers = destination.answers;
     return new WebSocketClass(url.href, {
-      headers: { 'User-Agent': 'dot-qq-bridge/0.1.0' }, handshakeTimeout: timeoutMs, maxPayload: 32768,
+      agent: false, headers: { 'User-Agent': 'dot-qq-bridge/0.1.0' }, handshakeTimeout: timeoutMs, maxPayload: 32768,
       followRedirects: false, perMessageDeflate: false, rejectUnauthorized: true, servername: url.hostname,
       lookup: (_hostname, options, callback) => options.all ? callback(null, answers) : callback(null, answers[0].address, answers[0].family)
     });

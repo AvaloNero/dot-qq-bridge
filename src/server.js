@@ -5,6 +5,7 @@ import { BridgeError, equal, object, rpcResult } from './common.js';
 import { createAuthenticator } from './auth.js';
 import { makePublicRequester } from './network.js';
 import { qqChallenge, qqVerify } from './signatures.js';
+import { assertApprovedTunnelLive } from './tunnel-service-operation.js';
 
 const VERSION = '2026-07-28';
 function json(res, status, value, headers = {}) {
@@ -65,9 +66,11 @@ export function validateMcp(request, headers) {
   return params;
 }
 
-export function createApp(config, { clock = Date.now, send = makePublicRequester(), worker = true } = {}) {
-  const bridge = new Bridge(config, { clock, send }), authenticate = createAuthenticator(config, send, clock);
-  let interval, lastTick = Promise.resolve(), stopping = false, lastPrune = 0, gateway;
+export function createApp(config, { clock = Date.now, send, worker = true, approvedLive = false } = {}) {
+  assertApprovedTunnelLive(config, approvedLive);
+  send ??= makePublicRequester();
+  const authenticate = createAuthenticator(config, send, clock), bridge = new Bridge(config, { clock, send, approvedLive });
+  let interval, lastTick = Promise.resolve(), stopping = false, lastPrune = 0, gateway, listenPromise, closePromise;
   const ready = () => bridge.ready() && !!bridge.store.activeSubscription(clock()) &&
     (config.qqTransport === 'webhook' || gateway?.status().connected === true);
   const server = http.createServer(async (req, res) => {
@@ -128,7 +131,7 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       const safe = error instanceof BridgeError ? error : new BridgeError('Internal bridge error', { status: 500, code: -32603 });
-      const extra = safe.status === 401 && isMcp ? { 'WWW-Authenticate': config.authMode === 'oauth' ?
+      const extra = safe.status === 401 && isMcp && config.authMode !== 'tunnel-service' ? { 'WWW-Authenticate': config.authMode === 'oauth' ?
         `Bearer resource_metadata="${config.publicOrigin}/.well-known/oauth-protected-resource/mcp", scope="${config.oauthScope}"` : 'Bearer' } : {};
       if (!res.headersSent && !res.destroyed) json(res, safe.status, isMcp ? { jsonrpc: '2.0', id: rpcId ?? null,
         error: { code: safe.code, message: safe.message, ...(safe.data ? { data: safe.data } : {}) } } : { error: safe.message }, extra);
@@ -143,17 +146,26 @@ export function createApp(config, { clock = Date.now, send = makePublicRequester
     }).catch(() => { process.stderr.write('Worker failure; inspect durable queue using the operator runbook.\n'); });
   }
   return { server, bridge,
-    attachGateway(adapter) { if (gateway) throw new Error('Gateway is already attached'); gateway = adapter; },
+    attachGateway(adapter) { if (gateway || stopping || config.tunnelServiceReadinessOnly) throw new Error('Gateway attachment refused'); gateway = adapter; },
     async listen(port = config.port, host = config.host) {
-      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
-      if (worker) { interval = setInterval(runWorker, config.workerIntervalMs); interval.unref(); }
+      if (stopping || listenPromise) throw new Error('Listener is already started or closed');
+      if (config.authMode === 'tunnel-service' && !['127.0.0.1', '::1'].includes(host)) throw new Error('Tunnel service listener must remain loopback-only');
+      listenPromise = new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.removeListener('error', reject); resolve(); }); });
+      await listenPromise;
+      if (stopping) throw new Error('Listener startup cancelled');
+      if (worker && !config.tunnelServiceReadinessOnly) { interval = setInterval(runWorker, config.workerIntervalMs); interval.unref(); }
       return server.address();
     },
-    async close() {
+    close() {
+      if (closePromise) return closePromise;
       stopping = true; clearInterval(interval);
-      await gateway?.stop();
-      await new Promise(resolve => server.close(resolve));
-      await lastTick; bridge.store.close();
+      closePromise = (async () => {
+        await gateway?.stop();
+        await listenPromise?.catch(() => {});
+        await new Promise(resolve => server.close(resolve));
+        await lastTick; bridge.store.close();
+      })();
+      return closePromise;
     }
   };
 }

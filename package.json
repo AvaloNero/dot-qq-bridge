@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "A single-owner QQ C2C to current-dot MCP Events bridge",
-  "engines": { "node": ">=24.15.0 <25" },
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/main.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
@@ -17,5 +19,8 @@
     "check": "node scripts/check.js"
   },
   "license": "MIT",
-  "dependencies": { "ws": "8.21.0" }
+  "dependencies": {
+    "@tencent-connect/qqbot-connector": "1.2.0",
+    "ws": "8.21.0"
+  }
 }

@@ -23,7 +23,7 @@ try {
     let input;
     try { input = JSON.parse(fs.readFileSync(args[1], 'utf8')); } catch { throw new BridgeError('Invalid credential input JSON'); }
     result = { mode: 'OFFLINE_RESULT_INSPECTION', ...redactedConnectionResult(inspectQrCredentials(input.credentials, input.selection)) };
-  } else throw new BridgeError('Usage: connect:qq [--plan | --demo | --inspect FILE]. Real --scan is disabled pending connector licensing review and explicit authorization.');
+  } else throw new BridgeError('Usage: connect:qq [--plan | --demo | --inspect FILE]. Use scripts/qq-official-scan.js --plan for the official scanner and its explicit consent requirements.');
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 } catch (error) {
   process.stderr.write((error instanceof BridgeError ? error.message : 'Connection inspection failed; input values were not printed') + '\n');

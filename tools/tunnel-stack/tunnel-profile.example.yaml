@@ -1,0 +1,21 @@
+# Placeholder references only. Copy and review outside both source repositories.
+# Existing, separately authorized credentials are provisioned by the operator.
+config_version: 1
+control_plane:
+  base_url: https://api.openai.com
+  tunnel_id: REPLACE_WITH_YOUR_OWN_TUNNEL_ID
+  api_key: file:/home/OPERATOR/dot-bridge/private/tunnel/runtime-api-key
+  poll_channels: [main]
+mcp:
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:8789/mcp
+  extra_headers:
+    X-Dot-Bridge-Service-Key: file:/home/OPERATOR/dot-bridge/private/tunnel/aggregate-service-key
+log:
+  level: info
+  format: json
+health:
+  listen_addr: 127.0.0.1:0
+admin_ui:
+  open_browser: false

@@ -1,8 +1,10 @@
 import { createPublicKey, verify } from 'node:crypto';
+import { createTunnelServiceAuthenticator } from './tunnel-service-auth.js';
 import { BridgeError, equal } from './common.js';
 
 const unauthorized = () => new BridgeError('Authentication required or rejected', { status: 401, code: -32012 });
 export function createAuthenticator(config, send, clock = Date.now) {
+  if (config.authMode === 'tunnel-service') return createTunnelServiceAuthenticator(config, clock);
   let cachedKeys = [], cacheUntil = 0, refreshAt = 0, pending;
   async function keys(force) {
     const now = clock();

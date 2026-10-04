@@ -1,0 +1,19 @@
+{
+  "channels": ["qq", "lark"],
+  "qq": {
+    "app_id": "REPLACE_WITH_QQ_APP_ID",
+    "credentials_file": "/home/OPERATOR/dot-bridge/private/qq/credentials.json",
+    "storage_key_file": "/home/OPERATOR/dot-bridge/private/qq/storage-key",
+    "database_path": "/home/OPERATOR/dot-bridge/private/qq/bridge.sqlite",
+    "lock_directory": "/home/OPERATOR/dot-bridge/private/locks",
+    "callback_hosts": []
+  },
+  "lark": {
+    "app_id": "REPLACE_WITH_LARK_APP_ID",
+    "credentials_file": "/home/OPERATOR/dot-bridge/private/lark/credentials.json",
+    "storage_key_file": "/home/OPERATOR/dot-bridge/private/lark/storage-key",
+    "database_path": "/home/OPERATOR/dot-bridge/private/lark/bridge.sqlite",
+    "lock_directory": "/home/OPERATOR/dot-bridge/private/locks",
+    "callback_hosts": []
+  }
+}

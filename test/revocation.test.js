@@ -74,3 +74,35 @@ test('a valid QQ signature over different raw bytes cannot authorize a tampered 
   assert.equal(response.status, 401);
   assert.equal(f.app.bridge.store.get('SELECT count(*) AS n FROM messages').n, 0);
 });
+
+test('unsubscribe during callback verification fences the in-flight subscription commit', async t => {
+  const entered = gate(), release = gate();
+  const f = await harness({ sendOverride: async (url, options) => {
+    if (url.includes('receiver') && JSON.parse(options.body).type === 'verification') { entered.open(); await release.promise; }
+  } });
+  t.after(async () => { release.open(); await f.close(); });
+  const pending = f.subscribe(); await entered.promise; await unsubscribe(f); release.open();
+  assert.equal((await pending).status, 400); assert.equal(f.app.bridge.store.activeSubscription(f.now()), undefined);
+});
+test('same-ID resubscribe cannot reauthorize old messages or jobs after unsubscribe or expiry', async t => {
+  for (const expire of [false, true]) {
+    const f = await harness(); t.after(f.close);
+    await f.subscribe(subscriptionParams({ ttlMs: 1000 })); await f.postQq(); await f.app.bridge.tick();
+    if (expire) f.advance(1001); else await unsubscribe(f);
+    assert.equal((await f.subscribe()).status, 200);
+    assert.equal((await f.reply()).status, 400);
+    assert.equal((await f.postMcp('tools/call', { name: 'get_qq_message', arguments: { message_id: 'fixture-message-1' } })).status, 400);
+  }
+});
+test('callback challenge gate refuses network after its requested lease deadline', async t => {
+  const entered = gate(), release = gate(); let f, connected = false;
+  f = await harness({ sendOverride: async (url, options) => {
+    if (url.includes('receiver') && JSON.parse(options.body).type === 'verification') {
+      entered.open(); await release.promise; options.beforeConnect(); connected = true;
+    }
+  } });
+  t.after(async () => { release.open(); await f.close(); });
+  const pending = f.subscribe(subscriptionParams({ ttlMs: 1 })); await entered.promise; f.advance(2); release.open();
+  assert.equal((await pending).body.error.code, -32015); assert.equal(connected, false);
+  assert.equal(f.app.bridge.store.activeSubscription(f.now()), undefined);
+});

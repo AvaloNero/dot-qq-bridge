@@ -1,7 +1,10 @@
+import { configuredProviderProxy, makeProviderRequester } from './provider-network.js';
 import https from 'node:https';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { BridgeError } from './common.js';
+import { makeCallbackTransport } from '../packages/dot-bridge-transport/index.js';
+import { callbackTransportFailure } from './callback-transport.js';
 
 const fail = (message, reason = 'connection_refused') => new BridgeError(message, { code: -32015, data: { reason }, retryable: true });
 export function publicAddress(address) {
@@ -49,8 +52,19 @@ export async function resolveDestination(raw, hosts, lookup = dnsLookup) {
   }
   return { url, answers };
 }
-export function makePublicRequester({ lookup = dnsLookup, request = https.request, timeoutMs = 10000, maxBytes = 262144 } = {}) {
-  return async function send(raw, { method = 'POST', headers = {}, body = Buffer.alloc(0), hosts, beforeConnect = () => {} }) {
+export function makePublicRequester({ lookup = dnsLookup, request = https.request, timeoutMs = 10000, maxBytes = 262144, proxyEnv = process.env, providerTimeoutMs = 30000,
+  providerSend = makeProviderRequester({ env: proxyEnv, timeoutMs: providerTimeoutMs, maxBytes }), managedCallbackAdapter,
+  callbackTimeoutMs = Math.min(timeoutMs, 10000), callbackMaxBytes = maxBytes,
+  callbackTransport = makeCallbackTransport({ lookup, request, timeoutMs: callbackTimeoutMs, maxBytes: callbackMaxBytes, proxyEnv, managedAdapter: managedCallbackAdapter }) } = {}) {
+  const send = async function send(raw, { method = 'POST', headers = {}, body = Buffer.alloc(0), hosts, beforeConnect = () => {}, purpose, signal }) {
+    if (purpose === 'callback') {
+      try { return await callbackTransport(raw, { method, headers, body, hosts, beforeConnect, signal }); }
+      catch (error) {
+        if (error instanceof BridgeError && error.code === -32012) throw error;
+        throw callbackTransportFailure(error, send);
+      }
+    }
+    if (purpose === 'provider' && configuredProviderProxy(proxyEnv)) return providerSend(raw, { method, headers, body, hosts, beforeConnect });
     // The DNS check is repeated on EVERY attempt; the vetted answers are pinned in lookup.
     let timer;
     const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(fail('Destination timeout', 'timeout')), timeoutMs); });
@@ -79,4 +93,6 @@ export function makePublicRequester({ lookup = dnsLookup, request = https.reques
       req.end(body);
     });
   };
+  send.callbackPreflight = () => callbackTransport.preflight?.();
+  return send;
 }

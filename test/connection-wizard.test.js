@@ -10,9 +10,9 @@ const accounts = [{ appId: 'fixture-app', appSecret: 'fixture-very-private-secre
 const selection = { confirmedOwnerOpenid: 'fixture-owner', ownerEvidence: 'official-qr-response' };
 const options = { scanAuthorized: true, licenseReviewReference: 'synthetic fixture only; no real SDK', selection, displayQr: () => {} };
 
-test('connection plan accurately reports the UNLICENSED uninstalled connector and starts no scan', () => {
+test('connection plan accurately reports the UNLICENSED documented SDK dependency and starts no scan', () => {
   const plan = connectionPlan(); assert.equal(plan.real_scan_started, false); assert.equal(plan.owner_binding_changed, false);
-  assert.equal(connectorReview.npm_license, 'UNLICENSED'); assert.equal(connectorReview.installed, false);
+  assert.equal(connectorReview.npm_license, 'UNLICENSED'); assert.equal(connectorReview.installed, true);
   assert.equal(connectorReview.bundled_license_file, false); assert.equal(plan.required_authorizations.length, 4);
 });
 
@@ -90,5 +90,5 @@ test('connection CLI inspects a protected input without logging values, writing 
   for (const value of [accounts[0].appSecret, accounts[0].appId, accounts[0].userOpenid]) assert.equal((result.stdout + result.stderr).includes(value), false);
   assert.deepEqual(fs.readFileSync(file), before); assert.deepEqual(fs.readdirSync(dir), ['result.json']);
   const forbidden = spawnSync(process.execPath, ['scripts/connect-qq.js', '--scan'], { encoding: 'utf8' });
-  assert.equal(forbidden.status, 1); assert.equal(forbidden.stdout, ''); assert.ok(forbidden.stderr.includes('licensing review'));
+  assert.equal(forbidden.status, 1); assert.equal(forbidden.stdout, ''); assert.ok(forbidden.stderr.includes('official scanner'));
 });

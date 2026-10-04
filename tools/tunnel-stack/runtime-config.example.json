@@ -1,0 +1,6 @@
+{
+  "tunnel_client": "/home/OPERATOR/.local/bin/tunnel-client",
+  "tunnel_profile": "/home/OPERATOR/dot-bridge/config/tunnel-profile.yaml",
+  "private_root": "/home/OPERATOR/dot-bridge/private",
+  "state_root": "/home/OPERATOR/dot-bridge/state"
+}

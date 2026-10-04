@@ -1,0 +1,19 @@
+# Non-secret preparation only. No runtime has been started with this file.
+# Install the official client and verify this profile against its own schema
+# after the required runtime-key and network authorizations are complete.
+config_version: 1
+control_plane:
+  base_url: https://api.openai.com
+  tunnel_id: REPLACE_WITH_YOUR_TUNNEL_ID
+  api_key: env:CONTROL_PLANE_API_KEY
+mcp:
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:3000/mcp
+log:
+  level: info
+  format: json
+health:
+  listen_addr: 127.0.0.1:0
+admin_ui:
+  open_browser: false

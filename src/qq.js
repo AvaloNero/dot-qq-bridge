@@ -27,7 +27,7 @@ export function createQqClient(config, send, clock = Date.now) {
     if (token && expires > clock() + 60000) return token;
     if (!pending) pending = (async () => {
       try {
-        const response = await send(`${tokenOrigin}/app/getAppAccessToken`, { hosts: [new URL(tokenOrigin).hostname],
+        const response = await send(`${tokenOrigin}/app/getAppAccessToken`, { purpose: 'provider', hosts: [new URL(tokenOrigin).hostname],
           headers: { 'Content-Type': 'application/json' }, body: Buffer.from(JSON.stringify({ appId: config.qqAppId, clientSecret: config.qqSecret })) });
         const data = JSON.parse(response.body.toString('utf8'));
         if (response.status !== 200 || (data.code !== undefined && data.code !== 0) ||
@@ -49,7 +49,7 @@ export function createQqClient(config, send, clock = Date.now) {
     authorize();
     let response;
     try {
-      response = await send(`${apiOrigin}/gateway/bot`, { method: 'GET', hosts: [new URL(apiOrigin).hostname],
+      response = await send(`${apiOrigin}/gateway/bot`, { method: 'GET', purpose: 'provider', hosts: [new URL(apiOrigin).hostname],
         headers: { Authorization: `QQBot ${accessToken}`, 'X-Bot-Appid': config.qqAppId }, beforeConnect: authorize });
     } catch { throw new BridgeError('QQ Gateway discovery failed', { retryable: true }); }
     if (response.status === 401) { clearToken(); throw new BridgeError('QQ Gateway authentication rejected', { retryable: true }); }
@@ -73,7 +73,7 @@ export function createQqClient(config, send, clock = Date.now) {
     let response;
     try {
       response = await send(`${apiOrigin}/v2/users/${encodeURIComponent(message.owner)}/messages`, {
-        hosts: [new URL(apiOrigin).hostname], headers: { 'Authorization': `QQBot ${accessToken}`, 'Content-Type': 'application/json', 'X-Bot-Appid': config.qqAppId },
+        purpose: 'provider', hosts: [new URL(apiOrigin).hostname], headers: { 'Authorization': `QQBot ${accessToken}`, 'Content-Type': 'application/json', 'X-Bot-Appid': config.qqAppId },
         body: Buffer.from(JSON.stringify({ msg_type: 0, content: text, msg_id: message.id, msg_seq: 1 })), beforeConnect: authorize
       });
     } catch (error) {

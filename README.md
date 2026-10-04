@@ -2,11 +2,11 @@
 
 QQ 官方机器人本人单聊文字 → 自建 MCP Events → **订阅所在的现有 OpenAI dot** → `reply_to_qq` → 同一 QQ 会话。
 
-第一版提供可运行的 Webhook 和可审查的官方 WebSocket Gateway 入站，复用同一主人白名单、持久队列和受限回复工具。HTTP 与真实本机 WebSocket 模拟闭环均通过。**真实 QQ、ChatGPT 插件安装、当前 dot 的事件订阅和云端部署均未联通验证。** 模拟器明确输出两个连接标记为 `false`，回答是固定测试数据。项目不调用模型 API，不读取 Cookie，不迁移或导出 dot 私有记忆。
+提供可运行的 Webhook 和可审查的官方 WebSocket Gateway 入站，复用同一主人白名单、持久队列和受限回复工具。HTTP 与真实本机 WebSocket 模拟闭环均通过。已有独立部署验证了当前 dot 经 Secure MCP Tunnel 调用 QQ/飞书只读工具，以及事件目录发现；**真实 Events 订阅、唤醒和 QQ/飞书消息往返仍未验收。** 模拟器的回答是固定测试数据。项目不调用模型 API，不读取 Cookie，不迁移或导出 dot 私有记忆。
 
 ## 立即运行离线验证
 
-需要 Node.js **24.15+、低于 25**。唯一运行依赖是与腾讯 SDK 使用版本一致的 MIT `ws@8.21.0`，固定在 lockfile；扫码 connector 没有安装。无需填写任何账户凭据。在仓库根目录运行：
+需要 Node.js **24.15+、低于 25**。依赖固定为 `ws@8.21.0` 与官方扫码 connector `@tencent-connect/qqbot-connector@1.2.0`，版本及 integrity 见 lockfile。无需填写任何账户凭据。在仓库根目录运行：
 
 ```powershell
 npm ci --ignore-scripts --registry=https://registry.npmjs.org
@@ -32,6 +32,12 @@ Windows 如果 PowerShell 限制 `npm.ps1`，使用 `npm.cmd`。依赖下载只�
 ```
 
 当前验证记录见 [docs/validation.md](docs/validation.md)。可选覆盖率检查：`npm run test:coverage`。
+
+## 两个仓库的可移植部署
+
+将本仓库与 `dot-lark-bridge` 克隆到同一个父目录。本仓库包含 `packages/dot-bridge-transport` 共享回调传输、`packages/dot-bridge-tunnel` 固定路由聚合器，以及 [可移植启动器](tools/tunnel-stack/README.md)。飞书从同级本仓库导入共享传输，不再依赖未受 Git 管理的第三个目录。部署布局、离线检查及交接边界见 [源码交接说明](docs/source-handoff.md)。
+
+私人 Tunnel 模式依赖 Linux 的文件所有者、权限、`O_NOFOLLOW`、`/proc/self/fd` 与进程锁保护。在 Windows 机器上使用 WSL/Linux 环境；未宣称 Windows 原生正式运行兼容。每个操作者使用自己的 Tunnel、服务凭据、主人配对及插件，不复制其他部署的密钥或身份。
 
 ## 能力与约束
 
@@ -68,7 +74,7 @@ npm start
 
 QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DATABASE_PATH`，例如 `data/sandbox.sqlite`；token 请求走 `bots.qq.com`，回复只走 `sandbox.api.sgroup.qq.com`。正式环境选择适用的 production profile，禁止共用已绑定环境的数据库。
 
-可试用的渠道交接与具体授权见 [docs/handoff.md](docs/handoff.md)。官方长连接及连接向导步骤见 [docs/connection.md](docs/connection.md)。扫码包 `@tencent-connect/qqbot-connector@1.2.0` 的 npm/package metadata 为 `UNLICENSED`，未附 LICENSE；官方指南推荐它，但适用于本项目的使用许可仍需确认。已准备公开回调接口，真实 `--scan` 保持禁用。授权后的已有官方凭据 + 已验证主人 openid 路线不依赖这个包。
+可试用的渠道交接与具体授权见 [docs/handoff.md](docs/handoff.md)。官方长连接及连接向导步骤见 [docs/connection.md](docs/connection.md)。扫码包 `@tencent-connect/qqbot-connector@1.2.0` 按官方 README 公开 API 以普通依赖接入，固定版本与 integrity。其 metadata 为 UNLICENSED，不被本项目 MIT 许可覆盖；无内部源码复制。独立扫码入口、用户确认和未验证项见 [docs/official-qr.md](docs/official-qr.md)。授权后的已有官方凭据 + 已验证主人 openid 路线不依赖这个包。
 
 ## 架构、协议与交付物
 
@@ -77,7 +83,7 @@ QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DAT
 - [docs/activation.md](docs/activation.md)：真实 QQ、OAuth、当前 dot 接入的最小清单及验收项。
 - [docs/deployment.md](docs/deployment.md)：持续托管、TLS、固定出网、存储和停机运行指南。
 - [docs/tencent-reference.md](docs/tencent-reference.md)：腾讯参考模块、端点与回复窗口差异、SDK 复用判断及许可证。
-- [docs/connection.md](docs/connection.md)：长连接、离线向导和扫码许可阻塞。
+- [docs/connection.md](docs/connection.md)：长连接和离线向导。
 - [docs/handoff.md](docs/handoff.md)：主线程云端交接、认证边界和最少授权。
 - `plugin/`：按官方 Agent Plugins 结构编写的手动接入模板，远程地址为保留的 `.invalid` 占位符；尚未注册或安装。
 - `Dockerfile`：持续容器托管模板，尚未构建、部署或选择收费服务。
@@ -85,3 +91,25 @@ QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DAT
 官方 [MCP Events](https://developers.openai.com/plugins/build/mcp-events) 描述了现有 dot 的订阅入口；[连接 ChatGPT](https://developers.openai.com/plugins/deploy/connect-chatgpt) 描述了 MCP 注册及插件测试步骤。QQ 使用 [官方开放平台协议](https://bot.q.qq.com/wiki/)。本仓库按文档实现，并将账户可用性、公网回调、当前 dot 行为及 Sites 托管能力保留为真实联调验收项。
 
 现有 MIT [LICENSE](LICENSE) 保持不变。参考审查见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 云环境代理兼容
+
+固定官方平台请求使用独立代理路径；MCP Events 的 challenge 与 event 投递显式走共享 callback 传输，managed proxy 缺受支持 adapter 时在 DNS/请求前拒绝，不偷偷降级直连。OAuth/Sites 原路径不变。网络边界、共享组件部署和剩余限制见 [云环境代理支持](docs/cloud-proxy.md)。这不代表当前 dot 或真实平台已接通。
+
+## QQ 云电脑已有账号诊断
+
+新增[已有机器人只读诊断](docs/cloud-trial.md)：无秘密plan及用户本人控制的无回显、仅内存输入入口。需单独授权后才执行最多两个官方请求；不会接收或回复消息，也不代表当前dot已连接。
+
+Official SDK scan: see [docs/official-qr.md](docs/official-qr.md).
+
+Formal continuous service: [docs/persistent-service.md](docs/persistent-service.md).
+
+Explicit tunnel/Sites mode contract: [docs/bridge-modes.md](docs/bridge-modes.md).
+
+## 私有单主人 Tunnel 接入检查
+
+新增显式 `AUTH_MODE=tunnel-service`，原默认 `deny` 和 OAuth 路径不变。仅适用于操作者确认只有自己拥有 Tunnel Use 权限的独立部署；不识别逐用户 ChatGPT 身份。以后分享代码时，每个人创建自己的 Tunnel 和凭据，不能共用本实例。
+
+当前新增入口 `scripts/run-tunnel-readiness.js` 只运行空内存库与只读 MCP，QQ transport 必须 `disabled`，拒绝任何机器人/主人/回调绑定。独立服务 key 由官方客户端的 `mcp.extra_headers` 文件引用注入；不使用 OpenAI API key 当下游密码。详见 [私有 Tunnel 运行配置](docs/tunnel-runtime-setup.md)。
+
+正式私有运行已完成离线实现：`TUNNEL_SERVICE_OPERATION=live` 必须显式选择，并通过官方 QR owner 凭据文件、独立存储 key 文件、私有数据库/模式锁与正式 CLI 确认。默认仍为 readiness，旧只读入口不能激活 live。回调白名单为空时只开放目录与设置检查；有效当前 dot Events 订阅建立前不请求 QQ。完整配置、文件格式、实际存储边界和待授权步骤见 [Tunnel live 运行说明](docs/tunnel-live.md)。本次实现不等于已部署或真实消息往返成功。

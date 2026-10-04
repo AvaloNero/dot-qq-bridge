@@ -37,7 +37,7 @@ export class QqGateway {
       if (!this.ownsLease || this.stopped || this.blocked) return;
       try {
         if (!this.bridge.store.renewGatewayLease(this.token, this.clock())) throw new Error('lease');
-        if (this.ws && !this.bridge.store.activeSubscription(this.clock())) this.disconnect('waiting_subscription', 5000);
+        if (this.ws && (!this.bridge.ready() || !this.bridge.store.activeSubscription(this.clock()))) this.disconnect('waiting_subscription', 5000);
       } catch { this.ownsLease = false; this.disconnect('waiting_lease', 5000); }
     }, 5000);
     await this.connect();
@@ -68,6 +68,7 @@ export class QqGateway {
     }
     const ws = await this.connectSocket(info.url, { hosts: this.bridge.config.gatewayHosts, beforeConnect: () => this.authorize() });
     if (this.stopped || this.blocked) { ws.on('error', () => {}); ws.terminate(); return; }
+    try { this.authorize(); } catch (error) { ws.on('error', () => {}); ws.terminate(); throw error; }
     this.ws = ws; this.accessToken = info.accessToken; this.hello = false; this.awaitingAck = false;
     this.setPhase('connecting');
     this.handshakeTimer = this.schedule(() => { if (this.ws === ws) this.disconnect('handshake_timeout'); }, 30000);

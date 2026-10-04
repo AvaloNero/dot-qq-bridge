@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "description": "Reviewed source snapshot with explicit layout/documentation and shared-test extraction adaptations; original hashes record provenance and packaged hashes verify this distribution.",
+  "files": [
+    {
+      "package": "dot-bridge-transport",
+      "file": "README.md",
+      "source_sha256": "a91e9845aadff13984b0014d15f27108820954fb8d68d92ea2f79114babdb192",
+      "packaged_sha256": "d41bb070da96747c0515dea84564df262cd465ad0d22589e55473ce2c46b5b48",
+      "adaptation": "packaged sibling-clone deployment documentation"
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "index.js",
+      "source_sha256": "12f74f7a1016c3f4ea735111a80b3f5dc72d590374cf14c4c3a70d5243673df1",
+      "packaged_sha256": "12f74f7a1016c3f4ea735111a80b3f5dc72d590374cf14c4c3a70d5243673df1",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "package.json",
+      "source_sha256": "afda155fbc6a815ca415c4068290e0b0538a370eba4b412674010831efa85a0a",
+      "packaged_sha256": "afda155fbc6a815ca415c4068290e0b0538a370eba4b412674010831efa85a0a",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "status.js",
+      "source_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
+      "packaged_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "test/contract.test.js",
+      "source_sha256": "5b76a3b7013d98408744617c13701ed50ee78bfa763132d09e81f33fb55c58eb",
+      "packaged_sha256": "5b76a3b7013d98408744617c13701ed50ee78bfa763132d09e81f33fb55c58eb",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "test/network-safety.test.js",
+      "source": "dot-bridge-tunnel/temporary/synthetic-events/test/transport.test.js",
+      "source_sha256": "0e18f3ff24634cb5424a28e6d7353a3bfc13224cb36b249e688df75c2758fbd9",
+      "packaged_sha256": "53a83d2dd00578d7ee146de3603f624503cdc40067aee1de7d0daa1a3832b25b",
+      "adaptation": "32 shared-core regressions directly use the formal API and exact-host policy; omit 3 wrapper-only tests; add 6 offline NO_PROXY hostname/IP/CIDR matrices; implementation unchanged"
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "transport.js",
+      "source_sha256": "12c0667e38460c7ffbf6f590233ca5bbce123f6c5d10eeb0e5b646d4dfd260a8",
+      "packaged_sha256": "12c0667e38460c7ffbf6f590233ca5bbce123f6c5d10eeb0e5b646d4dfd260a8",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "README.md",
+      "source_sha256": "e954397b492a5c36602fb86f6c59a49044921d182d905a91db2aee58ddb32903",
+      "packaged_sha256": "ecedb54edae3cacd4efdc1f39140115a7b5e10a506c235bc62d0d5639ddb8d10",
+      "adaptation": "packaged entrypoint and deployment documentation"
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "package.json",
+      "source_sha256": "465890f4f56d9f537264588a4da4d9f98354f4931ff94d8e1fa863076167d01e",
+      "packaged_sha256": "465890f4f56d9f537264588a4da4d9f98354f4931ff94d8e1fa863076167d01e",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/auth.js",
+      "source_sha256": "a57cca9dbac0931807280126d2085979a20cb93b54c54f142f1ce2048297a7a3",
+      "packaged_sha256": "a57cca9dbac0931807280126d2085979a20cb93b54c54f142f1ce2048297a7a3",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/catalog.js",
+      "source_sha256": "00c03f5236606871e24e38238c056e8004d269c107794a695a9ef1ca9e28dbd7",
+      "packaged_sha256": "00c03f5236606871e24e38238c056e8004d269c107794a695a9ef1ca9e28dbd7",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/common.js",
+      "source_sha256": "a4add04633816e38cebc90b9f09123cfa211feba23ae41145100a99516d028cc",
+      "packaged_sha256": "a4add04633816e38cebc90b9f09123cfa211feba23ae41145100a99516d028cc",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/config.js",
+      "source_sha256": "2bd7fd91905235ad3a68045a55af1d461d4ae16670d685486359562282683342",
+      "packaged_sha256": "2bd7fd91905235ad3a68045a55af1d461d4ae16670d685486359562282683342",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/live-contract.js",
+      "source_sha256": "d98f378e515d590c3673105cd9023317fcbf6643a102bafb7e329a5114f020e5",
+      "packaged_sha256": "d98f378e515d590c3673105cd9023317fcbf6643a102bafb7e329a5114f020e5",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/main.js",
+      "source_sha256": "07b2187cb2eb5c8abb3fe5ddacfc983318a42376ab62fddc71d6aff9a076df52",
+      "packaged_sha256": "07b2187cb2eb5c8abb3fe5ddacfc983318a42376ab62fddc71d6aff9a076df52",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/protocol.js",
+      "source_sha256": "43b03d6fa290c3c3763aa38cfa3012878e159a8d008276cf0aab072260530288",
+      "packaged_sha256": "43b03d6fa290c3c3763aa38cfa3012878e159a8d008276cf0aab072260530288",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/server.js",
+      "source_sha256": "8fd354f39a8cdadc565f9cc2c6dec0326baa60447527c96ea11d03f2f0a8eb6b",
+      "packaged_sha256": "8fd354f39a8cdadc565f9cc2c6dec0326baa60447527c96ea11d03f2f0a8eb6b",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/transport-headers.js",
+      "source_sha256": "426964bbf65c14b72762c2bcc55102601897e47e71305ef26a81159f4f47edd8",
+      "packaged_sha256": "426964bbf65c14b72762c2bcc55102601897e47e71305ef26a81159f4f47edd8",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/upstream.js",
+      "source_sha256": "1f0f93dbd1218e6ddc85eacd5ae43bc418226a2d528ff2c7b5797a4c858851a9",
+      "packaged_sha256": "1f0f93dbd1218e6ddc85eacd5ae43bc418226a2d528ff2c7b5797a4c858851a9",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "test/aggregator.test.js",
+      "source_sha256": "3dfd3b2ffb8d7fd0d0de07cf100701271976dd32a2d253334e60333d9fdc2bc5",
+      "packaged_sha256": "3dfd3b2ffb8d7fd0d0de07cf100701271976dd32a2d253334e60333d9fdc2bc5",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "test/live.test.js",
+      "source_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
+      "packaged_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "test/sibling-contract.test.js",
+      "source_sha256": "02b225bcaf3edf651794167950ce68a1f03058db3e1fded24e10de9094973a3b",
+      "packaged_sha256": "1a878782c2aa15796ba18bd5842119fe7cb8e232a04934cd6ffef38d92ce30bf",
+      "adaptation": "resolve QQ and Lark sibling clones from the nested aggregate package"
+    }
+  ]
+}

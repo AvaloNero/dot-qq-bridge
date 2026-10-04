@@ -6,16 +6,16 @@
 
 核实 [QQ WebSocket 方式](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/event-emit/websocket.html)、[通用事件协议](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/event-emit.html) 和 [Agent 接入指南](https://bot.q.qq.com/wiki/agent-qqbot/)。Gateway 从官方 `/gateway/bot` 获取 WSS URL/连接配额，使用 `QQBot {access_token}`、`shard:[0,1]`、`intents:1<<25`；HELLO 给出毫秒心跳周期，READY 给出 session ID，RESUME 带已提交 seq。官方建议处理事件后记录 seq；本项目将消息与 seq 放入同一耐久事务。
 
-官方 Agent 指南推荐扫码 SDK，但不能把其他腾讯包的 MIT 许可套用到它。实际下载并只读检查了官方 registry 的 `@tencent-connect/qqbot-connector@1.2.0`：npm metadata 与 package.json 均为 `UNLICENSED`，14 个文件中没有 LICENSE；README 没有独立许可条款。这里只报告可核实状态，适用的使用许可需由主线程确认。没有复制、导入、安装或执行它的运行代码，也没有推导它的私有扫码 REST 协议。
+官方扫码 SDK 的 npm metadata 为 UNLICENSED，不能套用上游 MIT 仓库许可。但官方 README 明确公开安装和调用方式，腾讯官方集成也直接依赖它。现已通过普通依赖固定安装 1.2.0，按公开 API 接入，不复制内部实现；完整证据、授权和运行边界见 [official-qr.md](official-qr.md)。未执行真实扫码。
 
 ```text
 Connector integrity:
 sha512-FAOUCvgxP4M9UiYbHrtVgJ7BavSlh1CHJPjeEQuTAkP9MZ91lX4yATqv6I/lB9yp15nVq+G2DaGSSJwQTSoSsA==
 ```
 
-其公开 API 为 `startQrConnect(callbacks, options) -> stop()` 和 `qrConnect(options) -> credentials[]`，公开类型包含 `appId`、`appSecret`、可选 `userOpenid`。已准备 `src/connection-wizard.js` 的回调适配接口：要求扫码授权及已审查许可依据、关闭 SDK 控制台打印、仅展示官方 QQ HTTPS URL、固定超时和可取消、停止轮询、脱敏失败、不自动保存。调用者必须明确确认唯一主人；缺 QR owner 时只接受独立验证的 QQ 消息身份，不能学习第一位发言者。多账户必须明确选择一项。这个接口尚未绑定真实 SDK。
+其公开 API 为 `startQrConnect(callbacks, options) -> stop()` 和 `qrConnect(options) -> credentials[]`，公开类型包含 `appId`、`appSecret`、可选 `userOpenid`。已准备 `src/connection-wizard.js` 的回调适配接口：要求扫码授权及已审查许可依据、关闭 SDK 控制台打印、仅展示官方 QQ HTTPS URL、固定超时和可取消、停止轮询、脱敏失败、不自动保存。调用者必须明确确认唯一主人；缺 QR owner 时只接受独立验证的 QQ 消息身份，不能学习第一位发言者。多账户必须明确选择一项。真实 SDK 已通过独立子进程入口接入，参见 official-qr.md。
 
-Gateway 自行实现公开协议，唯一依赖为 MIT `ws@8.21.0`，不是 OpenClaw 或腾讯推理后端。依赖版本/integrity 固定在 `package-lock.json`，对应许可在 `licenses/ws-MIT.txt`。
+Gateway 自行实现公开协议，传输依赖为 MIT `ws@8.21.0`，不是 OpenClaw 或腾讯推理后端。依赖版本/integrity 固定在 `package-lock.json`，对应许可在 `licenses/ws-MIT.txt`。
 
 ## 无凭据向导
 
@@ -25,9 +25,9 @@ npm run connect:qq -- --demo
 npm run simulate:gateway
 ```
 
-plan 列出官方入口、最少授权和许可阻塞。demo 注入 synthetic callback，只检验公开接口及清理，不创建二维码任务；输出 `real_scan_started:false`。Gateway simulation 使用实际 loopback WebSocket，包含断线/恢复/重复输入，再调用现有 MCP 工具回到同一模拟会话；两个真实连接标记均为 false。
+plan 列出官方入口和最少授权。demo 注入 synthetic callback，只检验公开接口及清理，不创建二维码任务；输出 `real_scan_started:false`。Gateway simulation 使用实际 loopback WebSocket，包含断线/恢复/重复输入，再调用现有 MCP 工具回到同一模拟会话；两个真实连接标记均为 false。
 
-真实 `--scan` 被 CLI 拒绝，不通过确认开关把未核实许可变成已允许。若已另行授权得到官方 SDK 的结果，可在受控本地文件里准备如下结构，再用 `npm run connect:qq -- --inspect FILE` 只读检查。下面全部是测试值：
+旧向导的 `--scan` 仍拒绝并引导至 `scripts/qq-official-scan.js --plan`。若已另行授权得到官方 SDK 的结果，可在受控本地文件里准备如下结构，再用 `npm run connect:qq -- --inspect FILE` 只读检查。下面全部是测试值：
 
 ```json
 {

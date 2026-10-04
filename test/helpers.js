@@ -3,6 +3,7 @@ import { readConfig } from '../src/config.js';
 import { createApp } from '../src/server.js';
 import { qqKey, verifyWebhook } from '../src/signatures.js';
 import { EVENT_NAME } from '../src/bridge.js';
+import { preflightCallbackTransport } from '../packages/dot-bridge-transport/index.js';
 
 // Deliberately public, synthetic fixture values. These are never real account credentials.
 export const FIXTURE_TOKEN = 'synthetic-local-token-for-tests-only-0000000000';
@@ -67,6 +68,9 @@ export async function harness({ overrides = {}, sendOverride, dbPath, worker = f
     }
     throw new Error('Unexpected fixture outbound request');
   }
+  // Synthetic test-only send has an explicitly selected direct fixture policy;
+  // this metadata reports configuration only, never real network verification.
+  send.callbackPreflight = () => preflightCallbackTransport({ proxyEnv: {} });
   const app = createApp(settings, { clock: () => now, send, worker });
   const address = await app.listen(0), origin = `http://127.0.0.1:${address.port}`;
   async function postMcp(method, params = {}, { headers = {}, request, token } = {}) {

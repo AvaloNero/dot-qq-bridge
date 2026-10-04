@@ -69,6 +69,9 @@ test('missing database and missing startup storage key fail without creating a d
   const env = { ...process.env, AUTH_MODE: 'deny', DATABASE_PATH: dbPath, STORAGE_KEY: '' };
   const status = spawnSync(process.execPath, ['scripts/status.js'], { encoding: 'utf8', env });
   assert.equal(status.status, 1); assert.equal(fs.existsSync(dbPath), false);
-  const start = spawnSync(process.execPath, ['src/main.js'], { encoding: 'utf8', env, timeout: 5000 });
-  assert.equal(start.status, 1); assert.equal(start.stdout, ''); assert.equal(fs.existsSync(dbPath), false);
+  const start = spawnSync(process.execPath, ['src/main.js', '--run', '--confirm-persistent-service'], { encoding: 'utf8', env, timeout: 5000 });
+  assert.equal(start.status, 1);
+  const preflight = JSON.parse(start.stdout); assert.equal(preflight.event, 'service_preflight');
+  assert.equal(preflight.ready_to_start, false); assert.equal(preflight.network_checked, false);
+  assert.ok(preflight.missing_settings.includes('STORAGE_KEY')); assert.equal(fs.existsSync(dbPath), false);
 });

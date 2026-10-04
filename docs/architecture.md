@@ -38,7 +38,7 @@ MCP OAuth 主体与 QQ 主人是两种身份，必须由操作者明确绑定。
 
 主人身份配置完整时允许发现事件，以便客户端发起首次订阅；回调白名单为空时仍拒绝该请求且不发出 challenge。拒绝结果和 `check_bridge_setup` 只向已认证主体显示 hostname 与人工配置步骤，不批准、保存或联系主机。主人身份缺失时事件仍隐藏。预检的 `configuration_ready` 只说明设置齐备，`network_checked:false`，不表示订阅或真实连接成功。
 
-所有出站 HTTPS 都要求指定的确切主机名；回调域名白名单默认为空。每次请求重新解析 DNS，拒绝内网、回环、映射及保留地址，将审核过的 IP 固定到实际连接，同时保留 TLS 主机名校验。禁止重定向、URL 用户名密码、IP 字面量、fragment 和非 443 端口。DNS 和 HTTP 各最多 10 秒，响应最多 256 KiB。没有环境变量可绕过此检查。
+所有出站 HTTPS 都要求指定的确切主机名；回调域名白名单默认为空。真实 MCP challenge 与 event 投递都显式选择共享 callback transport。无代理时每次重新解析 DNS、拒绝非公网地址、固定审核 IP 并保留 TLS 主机名校验；有 managed proxy 时，必须有支持该安全契约的专用 adapter，否则在 DNS/请求前停止，不隐式直连。禁止重定向、URL 用户名密码、IP 字面量、fragment 和非 443 端口，保留时限和响应大小上限。callback_transport 只报告固定配置状态、network_checked:false，不证明真实连接。详细边界见 [云环境代理支持](cloud-proxy.md)；没有环境布尔值能替代受支持 adapter 契约。
 
 ## 持久队列与发送语义
 
