@@ -1,3 +1,4 @@
+import { privateMkdtempSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -61,7 +62,7 @@ test('queue failure rolls back the message and seq together; RESUME retries the 
 });
 
 test('Gateway checkpoints and dedupe survive a restart, while session contents stay encrypted', async t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-qq-gateway-test-')), dbPath = path.join(dir, 'bridge.sqlite');
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-qq-gateway-test-')), dbPath = path.join(dir, 'bridge.sqlite');
   let first, second;
   t.after(async () => {
     await second?.close(); await first?.close();

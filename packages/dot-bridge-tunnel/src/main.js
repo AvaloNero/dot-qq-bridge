@@ -1,12 +1,19 @@
 import { readConfig } from './config.js';
 import { createApp } from './server.js';
-let app, shuttingDown;
+import { supervisedStop } from '../../dot-bridge-platform/supervised-stop.js';
+let app, shuttingDown, stopSupervision = () => {}, shutdownCode = 0;
 async function shutdown(code) {
-  if (!shuttingDown) shuttingDown = (async () => { await app?.close(); process.exitCode = code; })();
+  shutdownCode = Math.max(shutdownCode, code); stopSupervision();
+  process.exitCode = shutdownCode;
+  if (!shuttingDown) shuttingDown = (async () => {
+    try { await app?.close(); process.exitCode = shutdownCode; }
+    catch { process.exitCode = 1; }
+  })();
   return shuttingDown;
 }
 process.once('SIGINT', () => { void shutdown(0); });
 process.once('SIGTERM', () => { void shutdown(0); });
+stopSupervision = supervisedStop(() => shutdown(0));
 try {
   const config=readConfig();
   if(config.operation === 'live' && !process.argv.includes('--confirm-live'))throw new Error('Explicit live startup confirmation required');

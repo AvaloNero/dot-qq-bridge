@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { openPrivateDirectory, assertPrivateFile } from './private-files.js';
+import { windowsModeLock } from '../packages/dot-bridge-platform/index.js';
 export function bridgeMode(env) {
   if (!['tunnel', 'sites'].includes(env.BRIDGE_MODE)) throw new Error('Select exactly one BRIDGE_MODE: tunnel or sites');
   return env.BRIDGE_MODE;
@@ -10,6 +11,10 @@ export function bridgeMode(env) {
 // No automatic stale-lock takeover: a crash requires explicit operator recovery.
 export function acquireModeLock(directory, channel, appId, mode) {
   if (!path.isAbsolute(directory) || !['qq', 'lark'].includes(channel) || !/^[a-zA-Z0-9_-]{1,128}$/.test(appId) || !['tunnel', 'sites'].includes(mode)) throw new Error('Invalid shared mode-lock configuration');
+  if (process.platform === 'win32') {
+    try { return windowsModeLock(directory, createHash('sha256').update(`${channel}:${appId}`).digest('hex') + '.lock', { nonce: randomUUID(), mode, pid: process.pid }); }
+    catch { throw new Error('Shared mode lock unavailable'); }
+  }
   const parent = openPrivateDirectory(directory, { create: true });
   const key = createHash('sha256').update(`${channel}:${appId}`).digest('hex');
   const file = `${parent.path}/${key}.lock`, nonce = randomUUID();

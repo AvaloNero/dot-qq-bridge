@@ -21,7 +21,7 @@ The shared transport is maintained in the QQ repository. Both bridge application
 
 ## Offline checks
 
-Use Linux or WSL with Node 24.15 or later within major version 24 and Python 3. Install each repository's locked dependencies from the official npm registry with lifecycle scripts disabled. No account credentials are needed for checks.
+Use Linux or native Windows on local NTFS, with Node 24.15 or later within major version 24 and an existing Python 3.10+ interpreter. Windows safety and test boundaries are documented in [the platform layer](../packages/dot-bridge-platform/README.md); an actual Linux regression run remains separate. Install each repository's locked dependencies from the official npm registry with lifecycle scripts disabled. No account credentials are needed for checks.
 
 ```sh
 cd dot-qq-bridge

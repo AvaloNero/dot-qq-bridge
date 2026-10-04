@@ -23,6 +23,9 @@ class LiveStackTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='live-stack-synthetic-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        if sys.platform == 'win32':
+            self.root /= 'private-fixture'
+            with stack.windows_runtime().win.Directory(str(self.root), create=True): pass
         self.private = self.root / 'bridge-private'
         self.patch = mock.patch.multiple(stack, ROOT=self.root, PRIVATE=self.private, BASE=self.root,
                                          NODE=sys.executable, CLIENT=self.root / 'tunnel-client',
@@ -76,6 +79,8 @@ class LiveStackTests(unittest.TestCase):
     def test_only_explicit_channels_activate_and_environment_is_file_only(self):
         plan = {'channels': ['qq'], 'qq': self.plan['qq']}
         inherited = {'HTTPS_PROXY': 'synthetic-managed-proxy', 'SSL_CERT_FILE': '/synthetic/ca',
+                     'SSL_CERT_DIR': '/synthetic/ca-directory', 'NODE_EXTRA_CA_CERTS': '/synthetic/node-ca.pem',
+                     'NODE_USE_SYSTEM_CA': '1', 'NODE_OPTIONS': '--require=synthetic-forbidden-module',
                      'QQ_BOT_SECRET': 'synthetic-forbidden', 'STORAGE_KEY': 'synthetic-forbidden',
                      'LARK_APP_SECRET': 'synthetic-forbidden', 'OPENAI_API_KEY': 'synthetic-forbidden'}
         command, _, env = stack.child_spec('qq', plan, inherited)
@@ -94,6 +99,15 @@ class LiveStackTests(unittest.TestCase):
         self.assertEqual(env['TUNNEL_LIVE_CHANNELS'], 'qq')
         self.assertEqual((env['HOST'], env['PORT'], env['QQ_MCP_PORT'], env['LARK_MCP_PORT']),
                          ('127.0.0.1', '8789', '8787', '8788'))
+        for selected in (self.plan, {'channels': []}):
+            environments = [stack.child_spec(channel, selected, inherited)[2] for channel in ('qq', 'lark')]
+            environments.append(stack.aggregate_spec(selected, inherited)[2])
+            environments.append(stack.environment(inherited))
+            for child_env in environments:
+                for key in ('HTTPS_PROXY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'NODE_USE_SYSTEM_CA'):
+                    self.assertEqual(child_env[key], inherited[key])
+                self.assertNotIn('NODE_OPTIONS', child_env)
+                self.assertTrue(all('synthetic-forbidden' not in value for value in child_env.values()))
 
     def test_library_run_gate_precedes_ports_processes_and_metadata(self):
         with mock.patch.object(stack, 'ports_available', side_effect=AssertionError('port touched')), \
@@ -147,7 +161,10 @@ class LiveStackTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())['stage'], 'online')
         destination = self.root / 'destination.json'
         stack.safe_file(destination, writing=True, text='unchanged')
-        link = self.root / 'link.json'; link.symlink_to(destination)
+        link = self.root / 'link.json'
+        if sys.platform == 'win32':
+            subprocess.run(['C:\\Windows\\System32\\cmd.exe', '/d', '/c', 'mklink', '/J', str(link), str(destination)], check=True, stdout=subprocess.DEVNULL)
+        else: link.symlink_to(destination)
         with self.assertRaises(OSError): stack.safe_file(link, writing=True, text='changed')
         self.assertEqual(destination.read_text(), 'unchanged')
         with contextlib.redirect_stdout(io.StringIO()) as output:
@@ -164,7 +181,7 @@ class LiveStackTests(unittest.TestCase):
 
     def test_uncertain_shutdown_retains_lease_and_requires_review(self):
         state, log, lock, stop = (self.root / name for name in ('state.json', 'events.jsonl', 'stack.lock', 'stack.stop'))
-        stop.write_text('stop\n')
+        stop.write_bytes(b'stop\n')
         with mock.patch.multiple(stack, STATE=state, LOG=log, LOCK=lock, STOP=stop), \
              mock.patch.object(stack, 'ports_available', return_value=True), \
              mock.patch.object(stack.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), \
@@ -204,17 +221,25 @@ class LiveStackTests(unittest.TestCase):
         self.assertTrue(stack.stop_children([success])['graceful'])
 
     def test_replaced_lease_preserves_foreign_lock_and_stop_marker(self):
-        stack.STOP.write_text('stop\n')
+        stack.STOP.write_bytes(b'stop\n')
         def replace_lease(_children):
             foreign = self.root / 'foreign.lock'
             stack.safe_file(foreign, writing=True, text='synthetic-foreign-owner')
+            if sys.platform == 'win32':
+                with self.assertRaises(OSError): foreign.replace(stack.LOCK)
+                return {'all_exited': True, 'forced': False, 'graceful': True}
             foreign.replace(stack.LOCK)
             return {'all_exited': True, 'forced': False, 'graceful': True}
         with mock.patch.object(stack, 'ports_available', return_value=True), \
              mock.patch.object(stack.subprocess, 'Popen', side_effect=AssertionError('child started despite stop')), \
              mock.patch.object(stack, 'stop_children', side_effect=replace_lease), \
              contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(stack.run(self.plan, approved=True), 1)
+            self.assertEqual(stack.run(self.plan, approved=True), 0 if sys.platform == 'win32' else 1)
+        if sys.platform == 'win32':
+            self.assertEqual((self.root/'foreign.lock').read_text(), 'synthetic-foreign-owner')
+            self.assertFalse(stack.LOCK.exists()); self.assertFalse(stack.STOP.exists())
+            self.assertEqual(json.loads(stack.STATE.read_text())['stage'], 'stopped')
+            return
         self.assertEqual(stack.LOCK.read_text(), 'synthetic-foreign-owner')
         self.assertTrue(stack.STOP.exists())
         self.assertEqual(json.loads(stack.STATE.read_text())['stage'], 'stop_incomplete_requires_review')
@@ -318,7 +343,9 @@ class LiveStackTests(unittest.TestCase):
     def test_live_and_readiness_share_exclusive_lease_and_stop(self):
         manifest = self.runtime_manifest()
         stack.configure_runtime(manifest, sys.executable)
-        stack.BASE.mkdir(mode=0o700)
+        if sys.platform == 'win32':
+            with stack.windows_runtime().win.Directory(str(stack.BASE), create=True): pass
+        else: stack.BASE.mkdir(mode=0o700)
         stack.safe_file(stack.LOCK, writing=True, text='synthetic-owner')
         with mock.patch.object(stack, 'ports_available', return_value=True), \
              mock.patch.object(stack, 'PRIVATE', self.private), \

@@ -1,3 +1,4 @@
+import { privateMkdtempSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,7 +9,7 @@ import { Store } from '../src/store.js';
 import { config, qqPayload, qqHeaders, FIXTURE_SECRET } from './helpers.js';
 
 function temporary(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-qq-operator-test-'));
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-qq-operator-test-'));
   t.after(() => {
     const absolute = path.resolve(dir);
     assert.equal(path.dirname(absolute), path.resolve(os.tmpdir()));

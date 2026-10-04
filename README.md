@@ -37,7 +37,7 @@ Windows 如果 PowerShell 限制 `npm.ps1`，使用 `npm.cmd`。依赖下载只�
 
 将本仓库与 `dot-lark-bridge` 克隆到同一个父目录。本仓库包含 `packages/dot-bridge-transport` 共享回调传输、`packages/dot-bridge-tunnel` 固定路由聚合器，以及 [可移植启动器](tools/tunnel-stack/README.md)。飞书从同级本仓库导入共享传输，不再依赖未受 Git 管理的第三个目录。部署布局、离线检查及交接边界见 [源码交接说明](docs/source-handoff.md)。
 
-私人 Tunnel 模式依赖 Linux 的文件所有者、权限、`O_NOFOLLOW`、`/proc/self/fd` 与进程锁保护。在 Windows 机器上使用 WSL/Linux 环境；未宣称 Windows 原生正式运行兼容。每个操作者使用自己的 Tunnel、服务凭据、主人配对及插件，不复制其他部署的密钥或身份。
+私人 Tunnel 模式在 Linux 使用文件所有者、权限、`O_NOFOLLOW`、`/proc/self/fd` 与进程锁保护；Windows 原生分支使用本地 NTFS、所有者/SYSTEM 私有 DACL 和固定句柄，见[安全平台层](packages/dot-bridge-platform/README.md)。Windows 离线结果不代表 Linux 或真实消息验收。每个操作者使用自己的 Tunnel、服务凭据、主人配对及插件，不复制其他部署的密钥或身份。
 
 ## 能力与约束
 
@@ -99,6 +99,11 @@ QQ 官方沙箱选择 `QQ_API_PROFILE=tencent-sandbox`，同时使用独立 `DAT
 ## QQ 云电脑已有账号诊断
 
 新增[已有机器人只读诊断](docs/cloud-trial.md)：无秘密plan及用户本人控制的无回显、仅内存输入入口。需单独授权后才执行最多两个官方请求；不会接收或回复消息，也不代表当前dot已连接。
+
+Native Windows private storage and finite-window supervision:
+[platform boundary and tests](packages/dot-bridge-platform/README.md),
+[portable stack configuration](tools/tunnel-stack/README.md). This does not
+authorize reuse of saved keys or attest real current-dot delivery.
 
 Official SDK scan: see [docs/official-qr.md](docs/official-qr.md).
 

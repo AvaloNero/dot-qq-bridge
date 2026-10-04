@@ -1,3 +1,4 @@
+import { privateMkdtempSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -80,7 +81,7 @@ test('synchronous QR success requires a valid disposer and late duplicate callba
 });
 
 test('connection CLI inspects a protected input without logging values, writing configuration or permitting --scan', t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-qq-qr-test-'));
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-qq-qr-test-'));
   t.after(() => { assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); assert.ok(path.basename(dir).startsWith('dot-qq-qr-test-')); fs.rmSync(dir, { recursive: true, force: true }); });
   const file = path.join(dir, 'result.json'); fs.writeFileSync(file, JSON.stringify({ credentials: accounts, selection }));
   const before = fs.readFileSync(file);

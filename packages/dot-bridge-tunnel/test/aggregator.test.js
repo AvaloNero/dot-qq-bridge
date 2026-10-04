@@ -1,3 +1,4 @@
+import { privateMkdtempSync, fixtureChmodSync, fixtureSymlinkSync } from '../../dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,7 +16,7 @@ import { VERSION, OWNER, SERVICE_HEADER, metadata } from '../src/common.js';
 const KEYS = { ingress: Buffer.alloc(32, 41).toString('base64url'), qq: Buffer.alloc(32, 42).toString('base64url'), lark: Buffer.alloc(32, 43).toString('base64url') }; // public synthetic fixtures, not real credentials
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 function fixture(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-aggregate-test-')); fs.chmodSync(dir, 0o700);
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-aggregate-test-')); fixtureChmodSync(dir, 0o700);
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const files = {};
   for (const [role, key] of Object.entries(KEYS)) { files[role] = path.join(dir, role); fs.writeFileSync(files[role], key, { mode: 0o600 }); }
@@ -90,10 +91,10 @@ test('configuration requires explicit readiness and independent fixed loopback r
 });
 test('key reader rejects symlinks, hardlinks, directories, modes, oversized and malformed files', t => {
   const f = fixture(t); assert.equal(readServiceKey(f.files.ingress), KEYS.ingress);
-  fs.chmodSync(f.files.ingress, 0o640); assert.throws(() => readServiceKey(f.files.ingress)); fs.chmodSync(f.files.ingress, 0o600);
-  fs.chmodSync(f.dir, 0o750); assert.throws(() => readServiceKey(f.files.ingress)); fs.chmodSync(f.dir, 0o700);
-  const alias = path.join(f.dir, 'alias'); fs.symlinkSync(f.files.ingress, alias); assert.throws(() => readServiceKey(alias)); fs.unlinkSync(alias);
-  fs.symlinkSync(f.dir, alias); assert.throws(() => readServiceKey(path.join(alias, 'ingress'))); fs.unlinkSync(alias);
+  fixtureChmodSync(f.files.ingress, 0o640); assert.throws(() => readServiceKey(f.files.ingress)); fixtureChmodSync(f.files.ingress, 0o600);
+  fixtureChmodSync(f.dir, 0o750); assert.throws(() => readServiceKey(f.files.ingress)); fixtureChmodSync(f.dir, 0o700);
+  const alias = path.join(f.dir, 'alias'); fixtureSymlinkSync(f.files.ingress, alias); assert.throws(() => readServiceKey(alias)); fs.unlinkSync(alias);
+  fixtureSymlinkSync(f.dir, alias); assert.throws(() => readServiceKey(path.join(alias, 'ingress'))); fs.unlinkSync(alias);
   fs.linkSync(f.files.ingress, alias); assert.throws(() => readServiceKey(f.files.ingress)); fs.unlinkSync(alias);
   assert.throws(() => readServiceKey(f.dir));
   for (const value of [KEYS.ingress + '\n', 'a'.repeat(43), 'x'.repeat(50000), 'synthetic-invalid-value', '']) {
@@ -258,12 +259,14 @@ test('per-process authenticated rate limit is bounded', async t => {
 test('CLI signal shutdown exits cleanly and never prints credential values or file paths', async t => {
   const f = fixture(t), hold = http.createServer(); hold.listen(0, '127.0.0.1'); await new Promise(resolve => hold.once('listening', resolve));
   const port = hold.address().port; await new Promise(resolve => hold.close(resolve));
-  const child = spawn(process.execPath, ['src/main.js'], { cwd: root, env: { PATH: process.env.PATH, ...f.env, PORT: String(port) }, stdio: ['ignore','pipe','pipe'] });
+  const child = spawn(process.execPath, ['src/main.js'], { cwd: root, env: { PATH: process.env.PATH, ...f.env, PORT: String(port), ...(process.platform === 'win32' ? { DOT_BRIDGE_SUPERVISED: '1' } : {}) }, stdio: [process.platform === 'win32' ? 'pipe' : 'ignore','pipe','pipe'] });
   let output = ''; child.stdout.on('data', d => { output += d; }); child.stderr.on('data', d => { output += d; });
   t.after(() => { if (child.exitCode === null) child.kill('SIGTERM'); });
   const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
-  for (let i = 0; i < 100 && !output.includes('started') && child.exitCode === null; i++) await new Promise(resolve => setTimeout(resolve, 20));
-  assert.ok(output.includes('started')); child.kill('SIGTERM'); const result = await exited;
+  for (let i = 0; i < (process.platform === 'win32' ? 500 : 100) && !output.includes('started') && child.exitCode === null; i++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(output.includes('started'));
+  if (process.platform === 'win32') child.stdin.end('stop\n'); else child.kill('SIGTERM');
+  const result = await exited;
   assert.equal(result.code, 0); assert.equal(result.signal, null);
   for (const value of [...Object.values(KEYS), f.dir]) assert.equal(output.includes(value), false);
 });

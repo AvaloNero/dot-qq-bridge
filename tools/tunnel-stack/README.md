@@ -10,12 +10,17 @@ a replacement for the owner's authorization.
 
 ## Platform and source layout
 
-Use **Linux or WSL Linux**, including on RMB16 if its host OS is Windows. Native
-Windows execution is deliberately unsupported: this supervisor depends on Linux
-`/proc`, `fcntl` locking, POSIX file permissions and Unix process shutdown. Keep
-the checkout and private/state directories on the WSL Linux filesystem, not an
-NTFS mount with incompatible permission behavior. Python 3.10+ and the bridge's
-Node requirement (currently Node 24.15+ within major 24) must be available there.
+Linux uses `/proc`, `fcntl`, owned 0700 directories and 0600 files. Native Windows
+uses local fixed NTFS drives, owner/SYSTEM-only DACLs, descriptor-relative Win32/NT
+opens, `LockFileEx`, and a private Job Object. It does not emulate Unix permissions
+with `chmod`. UNC/device/ADS paths, reparse points and hardlinked private files are
+refused. Other platforms fail closed with `supported_runtime_required`.
+
+Both require existing Python 3.10+ and Node 24.15+ within major 24. Windows uses the
+supervisor's existing interpreter for the Node private-file helper; standalone
+bridge tools can select that same trusted interpreter with `DOT_BRIDGE_PYTHON`.
+No interpreter, WSL distribution, binary, certificate or software is installed by
+these launchers. Details: [Windows platform boundary](../../packages/dot-bridge-platform/README.md).
 
 ```text
 any-parent-directory/
@@ -39,6 +44,13 @@ files are not forwarded or sourced. If a version manager supplies Node elsewhere
 pass its absolute binary path explicitly. Proxy and CA environment settings are
 forwarded through a small allowlist, preserving the existing transport policy;
 they are not printed. The child HOME is an external empty directory under state.
+On Windows pass `--node 'C:\Program Files\nodejs\node.exe'`; its directory is
+the only child PATH entry. Windows additionally receives SystemRoot/WINDIR, a
+private USERPROFILE, the selected Python path and the private supervision flag.
+
+The CA allowlist explicitly preserves inherited `SSL_CERT_FILE`, `SSL_CERT_DIR`,
+`NODE_EXTRA_CA_CERTS` and `NODE_USE_SYSTEM_CA`. It does not set these values,
+install certificates, disable TLS verification or forward `NODE_OPTIONS`.
 
 ## Non-secret external configuration
 
@@ -53,7 +65,7 @@ Review that profile before authorizing a run.
 
 The runtime manifest has exactly four absolute paths:
 
-- `tunnel_client`: separately installed, operator-approved official Linux binary
+- `tunnel_client`: separately installed, operator-approved official binary for the selected OS
 - `tunnel_profile`: reviewed, non-secret profile outside the repositories
 - `private_root`: existing private directory outside the repositories
 - `state_root`: common external directory used by **both** launchers
@@ -61,9 +73,15 @@ The runtime manifest has exactly four absolute paths:
 The private and state roots must be distinct and non-overlapping; profile and
 binary locations must be outside both roots. Source-repository destinations,
 relative paths and `..` components are rejected. Runtime directories must be
-owner-owned mode 0700. Create the state root's parent beforehand; an authorized
+owner-owned mode 0700 on Linux, or protected owner/SYSTEM-only DACLs on Windows.
+Create the state root's parent beforehand; an authorized
 run may create the state root and its empty HOME. Metadata uses owner-only 0600
 single-link regular files and rejects symlinks.
+Windows creates private objects with their final DACL, validates existing objects
+by handle, and never repairs a deployed ACL. The profile must also reside in an
+existing private directory; only metadata is checked by the supervisor. A binary
+may grant public read/execute but may not grant write/delete/DACL changes to
+untrusted principals. Windows paths in JSON must use escaped backslashes.
 
 Provision these existing authorized credential files separately; no provisioning
 or migration command is bundled here:
@@ -138,7 +156,8 @@ python3 tools/tunnel-stack/live-stack.py --stop --runtime-config /absolute/confi
 ```
 
 The shared state root contains `stack.lock`, `stack.stop`, `stack-state.json` and
-`stack-events.jsonl`. Both modes use the same exclusive create-plus-flock lease.
+`stack-events.jsonl`. Both modes use the same exclusive lease: create-plus-flock
+on Linux, atomic create with a retained native handle and LockFileEx on Windows.
 The launcher also refuses occupied fixed loopback ports 8787–8789 and an existing
 visible `tunnel-client` process (or the configured binary's process name). Keep
 one canonical manifest/state root per deployment. Separate machines or isolated
@@ -152,6 +171,13 @@ only its own remaining children if necessary. A forced/failed shutdown keeps the
 lease and stop marker and reports `stop_incomplete_requires_review`; never delete
 them automatically to force a second runtime. A recorded state older than 90
 seconds is stale, and a stop-request acknowledgement is not proof of shutdown.
+Windows assigns each suspended child to a kill-on-close Job Object before
+resuming it. Node children use an inherited private stop pipe; the client has a
+fresh hidden console for CTRL_BREAK. Descendants remain in the Job Object. Job
+accounting drains for at most two seconds; an incomplete drain is a forced stop.
+The 30-minute window and conservative lease retention apply on both platforms.
+Listener startup also has a 30-second deadline; configuration failures exit
+immediately rather than waiting for a stop request.
 
 Logs retain the latest 1000 fixed-classification events from the current run and
 overwrite the previous run on its first event. Provider stdout is projected to
@@ -168,10 +194,24 @@ From the QQ checkout, run:
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/tunnel-stack -p 'test_*.py' -v
 ```
 
-The tests use auto-cleaned synthetic directories and mocked process/network calls.
-They do not start a tunnel, provider, local HTTP listener or real child process,
-read deployed credentials, generate persistent keys, or contact external services.
+The original supervisor tests use auto-cleaned synthetic directories and mocked
+process/network calls. Windows integration tests additionally start short-lived
+hidden Python children and the three actual readiness entrypoints on temporary
+loopback ports, using public synthetic file keys and empty databases. They never
+start a Tunnel client or provider, create a real Events subscription, read deployed
+credentials, generate persistent keys, or contact external services.
 Coverage includes relocation under an arbitrary clone parent, default/gated plans,
 outside-repository configuration, environment isolation, shared readiness/live
 lease and stop behavior, fixed-port conflicts, log redaction, 30-minute window
 termination, and conservative handling of an incomplete shutdown.
+
+On Windows, run with the already installed interpreter:
+
+```powershell
+& 'C:\path\to\python.exe' -B -m unittest discover -s tools/tunnel-stack -p 'test_*.py' -v
+```
+
+Run these native integration tests as the intended normal Windows user. A sandbox
+token that cannot traverse that user's ancestors must fail closed; granting it
+access or weakening DACL checks is not a test setup requirement. Linux runtime
+regressions must be run separately on Linux; Windows results do not attest them.

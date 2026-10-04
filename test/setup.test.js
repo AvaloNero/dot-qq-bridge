@@ -1,3 +1,4 @@
+import { privateMkdtempSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -79,7 +80,7 @@ test('configuration accepts only the explicit sandbox profile and exact DNS call
   }
 });
 test('sandbox and production must use separate databases, including legacy production message records', t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-qq-setup-test-')), dbPath = path.join(dir, 'bridge.sqlite');
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-qq-setup-test-')), dbPath = path.join(dir, 'bridge.sqlite');
   t.after(() => {
     assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); assert.ok(path.basename(dir).startsWith('dot-qq-setup-test-'));
     fs.rmSync(dir, { recursive: true, force: true });

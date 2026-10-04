@@ -8,7 +8,9 @@ It does not launch QQ/Lark processes, own provider connections or contact callba
 
 ## Security and scope
 
-- Linux and Node.js 22+; no third-party runtime dependencies.
+- Linux or native Windows NTFS. The deployed sibling stack uses Node 24.15+ in
+  major 24; Windows additionally uses an existing Python 3 interpreter and the
+  sibling [private-file platform layer](../dot-bridge-platform/README.md).
 - Three independent service credentials: aggregate ingress, QQ upstream, Lark
   upstream. File paths **and credential contents** must differ. Provider secrets,
   OAuth tokens, client identity claims and provider IDs are never used.

@@ -4,14 +4,15 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, canonical, hash } from './common.js';
 import { Vault } from './signatures.js';
-import { privateDatabasePath } from './private-files.js';
+import { openPrivateDirectory, privateDatabasePath } from './private-files.js';
 import { destinationUrl } from './network.js';
 
 export class Store {
   constructor(config) {
     this.config = config;
     this.vault = new Vault(config.storageKey);
-    if (config.authMode === 'tunnel-service' && !config.tunnelServiceReadinessOnly) {
+    if ((config.authMode === 'tunnel-service' && !config.tunnelServiceReadinessOnly) || (process.platform === 'win32' && config.dbPath !== ':memory:')) {
+      if (process.platform === 'win32' && config.authMode !== 'tunnel-service') openPrivateDirectory(path.dirname(config.dbPath), { create: true }).close();
       this.privatePath = privateDatabasePath(config.dbPath, { create: true });
     } else if (config.dbPath !== ':memory:') {
       fs.mkdirSync(path.dirname(config.dbPath), { recursive: true, mode: 0o700 });

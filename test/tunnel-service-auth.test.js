@@ -1,3 +1,4 @@
+import { privateMkdtempSync, privateMkdirSync, fixtureChmodSync, fixtureSymlinkSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ import { createApp } from '../src/server.js';
 import { mcpRequest } from './helpers.js';
 const key = Buffer.alloc(32, 19).toString('base64url'); // public fixture only
 function fixture(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-tunnel-auth-test-')); fs.chmodSync(dir, 0o700);
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'qq-tunnel-auth-test-')); fixtureChmodSync(dir, 0o700);
   const file = path.join(dir, 'key'); fs.writeFileSync(file, key, { mode: 0o600 });
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const env = { AUTH_MODE: 'tunnel-service', BRIDGE_MODE: 'tunnel', TUNNEL_SERVICE_KEY_FILE: file,
@@ -35,10 +36,10 @@ test('tunnel mode is explicit, local-only, separate from provider/OAuth and read
 });
 test('strict key reader rejects symlinks, hardlinks, permissions and malformed token without exposing it', t => {
   const f = fixture(t); assert.equal(readServiceKey(f.file), key);
-  fs.chmodSync(f.file, 0o644); assert.throws(() => readServiceKey(f.file), /unavailable or unsafe/); fs.chmodSync(f.file, 0o600);
-  fs.chmodSync(f.dir, 0o755); assert.throws(() => readServiceKey(f.file)); fs.chmodSync(f.dir, 0o700);
-  const link = path.join(f.dir, 'link'); fs.symlinkSync(f.file, link); assert.throws(() => readServiceKey(link));
-  const sub = path.join(f.dir, 'sub'); fs.mkdirSync(sub, { mode: 0o700 }); fs.symlinkSync(f.dir, path.join(sub, 'linked')); assert.throws(() => readServiceKey(path.join(sub, 'linked', 'key')));
+  fixtureChmodSync(f.file, 0o644); assert.throws(() => readServiceKey(f.file), /unavailable or unsafe/); fixtureChmodSync(f.file, 0o600);
+  fixtureChmodSync(f.dir, 0o755); assert.throws(() => readServiceKey(f.file)); fixtureChmodSync(f.dir, 0o700);
+  const link = path.join(f.dir, 'link'); fixtureSymlinkSync(f.file, link); assert.throws(() => readServiceKey(link));
+  const sub = path.join(f.dir, 'sub'); privateMkdirSync(sub, { mode: 0o700 }); fixtureSymlinkSync(f.dir, path.join(sub, 'linked')); assert.throws(() => readServiceKey(path.join(sub, 'linked', 'key')));
   const hard = path.join(f.dir, 'hard'); fs.linkSync(f.file, hard); assert.throws(() => readServiceKey(f.file)); fs.unlinkSync(hard);
   for (const value of [key + '\n', 'sk-sensitive-fixture', 'a'.repeat(43), 'x'.repeat(10000)]) {
     fs.writeFileSync(f.file, value); assert.throws(() => readServiceKey(f.file), error => !error.message.includes(value));

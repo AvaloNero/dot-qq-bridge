@@ -11,10 +11,14 @@ const adaptations = new Set([
   'dot-bridge-transport/README.md',
   'dot-bridge-transport/test/network-safety.test.js',
   'dot-bridge-tunnel/README.md',
+  'dot-bridge-tunnel/src/auth.js',
+  'dot-bridge-tunnel/src/main.js',
+  'dot-bridge-tunnel/test/aggregator.test.js',
+  'dot-bridge-tunnel/test/live.test.js',
   'dot-bridge-tunnel/test/sibling-contract.test.js'
 ]);
 
-test('packaged sources match the reviewed SHA-256 snapshot; runtime code has no copy drift', () => {
+test('packaged sources match the SHA-256 snapshot with explicitly declared layout and Windows adaptations', () => {
   assert.equal(manifest.version, 1);
   assert.equal(manifest.files.length, 22);
   const seen = new Set();

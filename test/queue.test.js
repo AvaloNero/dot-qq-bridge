@@ -1,3 +1,4 @@
+import { privateMkdtempSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +10,7 @@ import { Store } from '../src/store.js';
 import { BridgeError } from '../src/common.js';
 
 function temp(t, beforeCleanup = async () => {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-qq-bridge-test-'));
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-qq-bridge-test-'));
   t.after(async () => {
     await beforeCleanup();
     const resolved = path.resolve(dir), parent = path.resolve(os.tmpdir());

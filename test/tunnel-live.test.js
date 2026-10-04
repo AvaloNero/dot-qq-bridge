@@ -1,3 +1,4 @@
+import { cleanupPrivateFixture, beforeFixtureCleanup, privateMkdtempSync, fixtureChmodSync, fixtureSymlinkSync, assertPrivateFixture } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,8 +19,8 @@ import { makePublicRequester } from '../src/network.js';
 const serviceKey = Buffer.alloc(32, 21).toString('base64url');
 const storageKey = Buffer.alloc(32, 22).toString('base64url');
 function fixture(t) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-live-synthetic-'));
-  fs.chmodSync(directory, 0o700); t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const directory = privateMkdtempSync(path.join(os.tmpdir(), 'qq-live-synthetic-'));
+  fixtureChmodSync(directory, 0o700); cleanupPrivateFixture(t, directory);
   const key = path.join(directory, 'service-key'), storage = path.join(directory, 'storage-key');
   fs.writeFileSync(key, serviceKey, { mode: 0o600 }); fs.writeFileSync(storage, storageKey, { mode: 0o600 });
   saveQqCredentials({ appId: 'fixture-app', appSecret: 'synthetic-qq-secret', ownerOpenid: 'fixture_qq_owner', ownerEvidence: 'official-qr-response' },
@@ -52,11 +53,11 @@ test('credential loader rejects guessed evidence, scope changes, unsafe file lin
   for (const change of [{ owner_evidence: 'first-message' }, { owner_evidence: undefined }, { owner_openid: '' }, { app_id: 'other' }, { extra: 'unknown' }]) {
     fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(original), ...change })); assert.throws(f.config);
   }
-  fs.writeFileSync(file, original); fs.chmodSync(file, 0o640); assert.throws(f.config); fs.chmodSync(file, 0o600);
+  fs.writeFileSync(file, original); fixtureChmodSync(file, 0o640); assert.throws(f.config); fixtureChmodSync(file, 0o600);
   fs.linkSync(file, path.join(f.directory, 'hard')); assert.throws(f.config); fs.unlinkSync(path.join(f.directory, 'hard'));
-  fs.symlinkSync(file, path.join(f.directory, 'link')); assert.throws(() => readConfig({ ...f.env, QQ_CREDENTIALS_FILE: path.join(f.directory, 'link') }));
-  if (process.getuid() === 0) { fs.chownSync(file, 65534, 65534); assert.throws(f.config); fs.chownSync(file, 0, 0); }
-  fs.chmodSync(f.directory, 0o755); assert.throws(f.config); fs.chmodSync(f.directory, 0o700);
+  fixtureSymlinkSync(file, path.join(f.directory, 'link')); assert.throws(() => readConfig({ ...f.env, QQ_CREDENTIALS_FILE: path.join(f.directory, 'link') }));
+  if (typeof process.getuid === 'function' && process.getuid() === 0) { fs.chownSync(file, 65534, 65534); assert.throws(f.config); fs.chownSync(file, 0, 0); }
+  fixtureChmodSync(f.directory, 0o755); assert.throws(f.config); fixtureChmodSync(f.directory, 0o700);
   assert.throws(() => saveQqCredentials({ appId: 'fixture-app', appSecret: 'synthetic-secret', ownerOpenid: 'guessed' },
     { directory: path.join(f.directory, 'not-created'), expectedAppId: 'fixture-app', profile: 'tencent-sdk' }));
   assert.equal(fs.existsSync(path.join(f.directory, 'not-created')), false);
@@ -71,7 +72,7 @@ test('raw app and Bridge construction cannot bypass readiness/live safeguards or
   }
   assert.equal(fs.existsSync(f.env.DATABASE_PATH), false);
   for (const suffix of ['', '-wal', '-shm', '-journal']) {
-    const target = f.env.DATABASE_PATH + suffix; fs.symlinkSync(f.key, target); assert.throws(f.config); fs.unlinkSync(target);
+    const target = f.env.DATABASE_PATH + suffix; fixtureSymlinkSync(f.key, target); assert.throws(f.config); fs.unlinkSync(target);
   }
   fs.linkSync(f.key, f.env.DATABASE_PATH); assert.throws(f.config); fs.unlinkSync(f.env.DATABASE_PATH);
 });
@@ -101,7 +102,7 @@ async function liveHarness(t, { callback = true, worker = false } = {}) {
   send.callbackPreflight = () => preflightCallbackTransport({ proxyEnv: {} });
   const config = { ...f.config(), workerIntervalMs: 5 }, app = createApp(config, { clock: () => now, send, worker, approvedLive: true });
   const address = await app.listen(0), origin = `http://127.0.0.1:${address.port}`; let closed = false;
-  const close = async () => { if (!closed) { closed = true; await app.close(); } }; t.after(close);
+  const close = async () => { if (!closed) { closed = true; await app.close(); } }; beforeFixtureCleanup(t, close);
   const post = async (method, params = {}, headers = {}) => {
     const body = mcpRequest(method, params);
     const response = await fetch(`${origin}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
@@ -139,7 +140,7 @@ test('synthetic live gateway and encrypted durable queue complete one reply, rej
   f.advance(60001); gw.gateway.heartbeat(); assert.equal(gw.gateway.status().connected, false);
   assert.equal((await f.post('tools/call', { name: 'reply_to_qq', arguments: args })).status, 400);
   await f.close(); assert.equal(gw.intervals.size, 0); assert.equal(gw.timeouts.size, 0);
-  assert.equal(fs.statSync(f.env.DATABASE_PATH).mode & 0o777, 0o600);
+  assertPrivateFixture(assert, f.env.DATABASE_PATH, 0o600);
   const restarted = createApp(f.config, { send: () => assert.fail('network forbidden'), worker: false, approvedLive: true });
   assert.equal(restarted.bridge.store.replyStatus('fixture-message-1').status, 'sent'); await restarted.close();
   fs.writeFileSync(f.storage, Buffer.alloc(32, 24).toString('base64url'));
@@ -159,7 +160,7 @@ test('live enables normal queue worker and direct startup flags never silently a
 test('mode lock rejects ancestor links, hardlinked replacement, and a second mode consumer', t => {
   const f = fixture(t); const release = acquireModeLock(f.directory, 'qq', 'fixture-app', 'tunnel');
   assert.throws(() => acquireModeLock(f.directory, 'qq', 'fixture-app', 'sites'));
-  release(); const link = path.join(f.directory, 'link'); fs.symlinkSync(f.directory, link);
+  release(); const link = path.join(f.directory, 'link'); fixtureSymlinkSync(f.directory, link);
   assert.throws(() => acquireModeLock(link, 'qq', 'fixture-app', 'tunnel'));
   const releaseAgain = acquireModeLock(f.directory, 'qq', 'fixture-app', 'tunnel');
   const lock = fs.readdirSync(f.directory).find(name => name.endsWith('.lock'));
@@ -234,7 +235,7 @@ test('live restart with a persisted subscription cannot activate provider while 
   const send = makePublicRequester({ proxyEnv, lookup: () => assert.fail('DNS forbidden'), request: () => assert.fail('request forbidden'),
     providerSend: () => assert.fail('provider forbidden') });
   const app = createApp(f.config, { clock: f.now, send, approvedLive: true, worker: false });
-  const gw = fixtureGateway({ app, now: f.now }); app.attachGateway(gw.gateway); await app.listen(0); t.after(() => app.close());
+  const gw = fixtureGateway({ app, now: f.now }); app.attachGateway(gw.gateway); await app.listen(0); beforeFixtureCleanup(t, () => app.close());
   await gw.gateway.start();
   assert.equal(gw.gateway.status().phase, 'waiting_subscription'); assert.equal(gw.calls.length, 0);
   const snapshot = serviceSnapshot(app, gw.gateway, f.now);

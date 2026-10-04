@@ -1,3 +1,4 @@
+import { privateMkdtempSync, privateMkdirSync, fixtureChmodSync, cleanupPrivateFixture, beforeFixtureCleanup } from '../../dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,8 +14,8 @@ const qqSource = new URL('server.js', sibling('dot-qq-bridge'));
 const larkSource = new URL('server.js', sibling('dot-lark-bridge'));
 const available = fs.existsSync(qqSource) && fs.existsSync(larkSource);
 test('synthetic compatibility with actual sibling QQ and Lark readiness contracts; no provider traffic', { skip: !available }, async t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-aggregate-contract-')); fs.chmodSync(dir, 0o700);
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dir = privateMkdtempSync(path.join(os.tmpdir(), 'dot-aggregate-contract-')); fixtureChmodSync(dir, 0o700);
+  cleanupPrivateFixture(t, dir);
   const keys = [51,52,53].map(value => Buffer.alloc(32, value).toString('base64url'));
   const files = keys.map((key,i) => { const file = path.join(dir, `key-${i}`); fs.writeFileSync(file, key, { mode: 0o600 }); return file; });
   const { createApp: createQq } = await import(qqSource); const { createApp: createLark } = await import(larkSource);
@@ -26,10 +27,10 @@ test('synthetic compatibility with actual sibling QQ and Lark readiness contract
   const send = async () => { providerRequests++; throw Error('Synthetic tests forbid provider traffic'); };
   const qq = createQq({ ...readQq({ ...env, TUNNEL_SERVICE_KEY_FILE: files[1] }), dbPath: ':memory:', storageKey: Buffer.alloc(32,54).toString('base64') }, { worker: false, send });
   const lark = createLark({ ...readLark({ ...env, TUNNEL_SERVICE_KEY_FILE: files[2] }), dbPath: ':memory:', storageKey: Buffer.alloc(32,54).toString('base64') }, { worker: false, send });
-  t.after(async () => { await qq.close(); await lark.close(); });
+  beforeFixtureCleanup(t, async () => { await qq.close(); await lark.close(); });
   const qqAddress = await qq.listen(0), larkAddress = await lark.listen(0);
   const app = createApp({ host: '127.0.0.1', port: 8789, owner: OWNER, ingressKeyFile: files[0], qqKeyFile: files[1], larkKeyFile: files[2], qqPort: qqAddress.port, larkPort: larkAddress.port });
-  t.after(() => app.close()); const address = await app.listen(0);
+  beforeFixtureCleanup(t, () => app.close()); const address = await app.listen(0);
   const call = name => new Promise((resolve,reject) => {
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {}, _meta: metadata() } });
     const req = http.request({ host: '127.0.0.1', port: address.port, path: '/mcp', method: 'POST', agent: false,
@@ -52,8 +53,8 @@ test('synthetic compatibility with actual sibling QQ and Lark readiness contract
 });
 
 test('synthetic actual sibling live catalogs and pending-callback preflight; no gateway/provider/challenge calls', {skip:!available}, async t=>{
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aggregate-live-contract-'));fs.chmodSync(dir,0o700);t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
-  const qqDir=path.join(dir,'qq'),larkDir=path.join(dir,'lark');fs.mkdirSync(qqDir,{mode:0o700});fs.mkdirSync(larkDir,{mode:0o700});
+  const dir=privateMkdtempSync(path.join(os.tmpdir(),'aggregate-live-contract-'));fixtureChmodSync(dir,0o700);cleanupPrivateFixture(t,dir);
+  const qqDir=path.join(dir,'qq'),larkDir=path.join(dir,'lark');privateMkdirSync(qqDir,{mode:0o700});privateMkdirSync(larkDir,{mode:0o700});
   const keyValues=[101,102,103,104,105].map(x=>Buffer.alloc(32,x).toString('base64url'));
   const keyFiles=keyValues.map((value,i)=>{const file=path.join(dir,`key-${i}`);fs.writeFileSync(file,value,{mode:0o600});return file;});
   const {saveQqCredentials}=await import(new URL('credential-store.js',sibling('dot-qq-bridge')));
@@ -70,9 +71,9 @@ test('synthetic actual sibling live catalogs and pending-callback preflight; no 
   class WS{async start(){wsStarts++;throw Error('Synthetic contract test forbids gateway');}close(){}}
   const sdk={EventDispatcher:Dispatcher,WSClient:WS,LoggerLevel:{warn:1},Domain:{Feishu:'feishu'}};
   const qq=createQq(qqConfig,{approvedLive:true,worker:false,send}),lark=createLark(larkConfig,{approvedLive:true,worker:false,send,sdk});
-  t.after(async()=>{await qq.close();await lark.close();});
+  beforeFixtureCleanup(t,async()=>{await qq.close();await lark.close();});
   const qa=await qq.listen(0),la=await lark.listen(0);
-  const app=createApp({host:'127.0.0.1',port:8789,owner:OWNER,ingressKeyFile:keyFiles[0],qqKeyFile:keyFiles[1],larkKeyFile:keyFiles[2],qqPort:qa.port,larkPort:la.port,operation:'live',liveChannels:['qq','lark']},{approvedLive:true});t.after(()=>app.close());const address=await app.listen(0);
+  const app=createApp({host:'127.0.0.1',port:8789,owner:OWNER,ingressKeyFile:keyFiles[0],qqKeyFile:keyFiles[1],larkKeyFile:keyFiles[2],qqPort:qa.port,larkPort:la.port,operation:'live',liveChannels:['qq','lark']},{approvedLive:true});beforeFixtureCleanup(t,()=>app.close());const address=await app.listen(0);
   const post=(method,params={})=>new Promise((resolve,reject)=>{const req=http.request({host:'127.0.0.1',port:address.port,path:'/mcp',method:'POST',agent:false,headers:{[SERVICE_HEADER]:keyValues[0],'content-type':'application/json',accept:'application/json, text/event-stream','mcp-method':method,'mcp-protocol-version':VERSION,...(method==='tools/call'?{'mcp-name':params.name}:{})}},res=>{const chunks=[];res.on('data',x=>chunks.push(x));res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(Buffer.concat(chunks))}));});req.on('error',reject);req.end(JSON.stringify({jsonrpc:'2.0',id:1,method,params:{...params,_meta:metadata()}}));});
   const catalog=await post('tools/list');assert.equal(catalog.status,200);assert.equal(catalog.body.result.tools.length,6);
   const events=await post('events/list');assert.equal(events.status,200);assert.equal(events.body.result.events.length,2);

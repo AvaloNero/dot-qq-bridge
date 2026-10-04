@@ -1,0 +1,7 @@
+# Preserve the reviewed package byte hashes on every checkout platform.
+packages/** text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Reviewed source snapshot with explicit layout/documentation and shared-test extraction adaptations; original hashes record provenance and packaged hashes verify this distribution.",
+  "description": "Source snapshot provenance retained; packaged hashes cover explicit layout, shared-test extraction and native Windows adaptations.",
   "files": [
     {
       "package": "dot-bridge-transport",
@@ -56,8 +56,8 @@
       "package": "dot-bridge-tunnel",
       "file": "README.md",
       "source_sha256": "e954397b492a5c36602fb86f6c59a49044921d182d905a91db2aee58ddb32903",
-      "packaged_sha256": "ecedb54edae3cacd4efdc1f39140115a7b5e10a506c235bc62d0d5639ddb8d10",
-      "adaptation": "packaged entrypoint and deployment documentation"
+      "packaged_sha256": "a35fb708e1f62f99955b85e84891a1efbc53e926da53651482b4e2c502a51c82",
+      "adaptation": "existing packaged documentation; add native Windows boundary and interpreter dependency"
     },
     {
       "package": "dot-bridge-tunnel",
@@ -70,8 +70,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/auth.js",
       "source_sha256": "a57cca9dbac0931807280126d2085979a20cb93b54c54f142f1ce2048297a7a3",
-      "packaged_sha256": "a57cca9dbac0931807280126d2085979a20cb93b54c54f142f1ce2048297a7a3",
-      "adaptation": null
+      "packaged_sha256": "dce8ed9c839cbd4d7cb58ca16f0b5ae013bcb9d93c31978fbd9dd4a06e481b85",
+      "adaptation": "add explicit native Windows private-file branch; preserve Linux reader and original source hash"
     },
     {
       "package": "dot-bridge-tunnel",
@@ -105,8 +105,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/main.js",
       "source_sha256": "07b2187cb2eb5c8abb3fe5ddacfc983318a42376ab62fddc71d6aff9a076df52",
-      "packaged_sha256": "07b2187cb2eb5c8abb3fe5ddacfc983318a42376ab62fddc71d6aff9a076df52",
-      "adaptation": null
+      "packaged_sha256": "06f22bdcdf1f642a8856b9afcc257a57a474bbad14881168647adf3b8d4f6c9a",
+      "adaptation": "add private supervisor stop pipe and detach it on startup failure/shutdown"
     },
     {
       "package": "dot-bridge-tunnel",
@@ -140,22 +140,22 @@
       "package": "dot-bridge-tunnel",
       "file": "test/aggregator.test.js",
       "source_sha256": "3dfd3b2ffb8d7fd0d0de07cf100701271976dd32a2d253334e60333d9fdc2bc5",
-      "packaged_sha256": "3dfd3b2ffb8d7fd0d0de07cf100701271976dd32a2d253334e60333d9fdc2bc5",
-      "adaptation": null
+      "packaged_sha256": "c9bf4074c80e35a442a099954faad0cc50c64707bce3f5035ac8dcc66c587d4f",
+      "adaptation": "use actual Windows ACL/junction fixtures and private pipe shutdown; retain original Linux assertions"
     },
     {
       "package": "dot-bridge-tunnel",
       "file": "test/live.test.js",
       "source_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
-      "packaged_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
-      "adaptation": null
+      "packaged_sha256": "3d2fd19934775dabe288ece4115b2239cd23cd8cb1136a75f5d648958b9c73c4",
+      "adaptation": "use actual Windows private fixtures and a platform-absolute unapproved-path placeholder"
     },
     {
       "package": "dot-bridge-tunnel",
       "file": "test/sibling-contract.test.js",
       "source_sha256": "02b225bcaf3edf651794167950ce68a1f03058db3e1fded24e10de9094973a3b",
-      "packaged_sha256": "1a878782c2aa15796ba18bd5842119fe7cb8e232a04934cd6ffef38d92ce30bf",
-      "adaptation": "resolve QQ and Lark sibling clones from the nested aggregate package"
+      "packaged_sha256": "dc96b0bc20a880110207f45953492533a95bce55ac41f04fab6e54acdedcc3c3",
+      "adaptation": "existing sibling-clone resolution; use actual Windows private fixtures for sibling integration"
     }
   ]
 }

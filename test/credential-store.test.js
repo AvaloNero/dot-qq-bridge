@@ -1,3 +1,4 @@
+import { privateMkdtempSync, privateMkdirSync, fixtureSymlinkSync, assertPrivateFixture } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,17 +8,17 @@ import { spawnSync } from 'node:child_process';
 import { saveQqCredentials, prepareCredentialDestination } from '../src/credential-store.js';
 const candidate = {appId:'fixture',appSecret:'synthetic-secret-only',ownerOpenid:'fixture-owner',ownerEvidence:'official-qr-response'};
 test('credential save is exclusive private and preserves original on a second attempt', t => {
-  const base=fs.mkdtempSync(path.join(os.tmpdir(),'credential-fixture-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+  const base=privateMkdtempSync(path.join(os.tmpdir(),'credential-fixture-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
   const directory=path.join(base,'qq');
   assert.equal(saveQqCredentials(candidate,{directory,expectedAppId:'fixture',profile:'tencent-sdk'}).credentials_written,true);
-  assert.equal(fs.statSync(directory).mode&0o777,0o700); const file=path.join(directory,'credentials.json');
-  assert.equal(fs.statSync(file).mode&0o777,0o600); const original=fs.readFileSync(file);
+  assertPrivateFixture(assert,directory,0o700); const file=path.join(directory,'credentials.json');
+  assertPrivateFixture(assert,file,0o600); const original=fs.readFileSync(file);
   assert.throws(()=>saveQqCredentials(candidate,{directory,expectedAppId:'fixture',profile:'tencent-sdk'}));assert.deepEqual(fs.readFileSync(file),original);
 });
 test('unsafe destination and mismatched scope refuse before credential write', t => {
-  const base=fs.mkdtempSync(path.join(os.tmpdir(),'credential-fixture-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
-  fs.symlinkSync(base,path.join(base,'link'));assert.throws(()=>prepareCredentialDestination(path.join(base,'link','qq')));
-  fs.mkdirSync(path.join(base,'open'),{mode:0o755});assert.throws(()=>prepareCredentialDestination(path.join(base,'open')));
+  const base=privateMkdtempSync(path.join(os.tmpdir(),'credential-fixture-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+  fixtureSymlinkSync(base,path.join(base,'link'));assert.throws(()=>prepareCredentialDestination(path.join(base,'link','qq')));
+  privateMkdirSync(path.join(base,'open'),{mode:0o755});assert.throws(()=>prepareCredentialDestination(path.join(base,'open')));
   assert.throws(()=>saveQqCredentials(candidate,{directory:path.join(base,'qq'),expectedAppId:'other',profile:'tencent-sdk'}));assert.equal(fs.existsSync(path.join(base,'qq')),false);
 });
 test('persistent authorization requires explicit deployment settings and its default plan reveals no selected identity or path', () => {

@@ -1,3 +1,4 @@
+import { privateMkdtempSync, fixtureChmodSync } from '../../dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -17,7 +18,7 @@ const SECRET='whsec_'+Buffer.alloc(32,94).toString('base64'),CALLBACK='https://c
 const TRANSPORT={ready:true,mode:'direct',reason:'none',proxy_configured:false,destination_binding:'direct_pinned',network_checked:false};
 const BLOCKED_TRANSPORT={ready:false,mode:'blocked',reason:'proxy_policy_unverified',proxy_configured:true,destination_binding:'unverified',network_checked:false};
 function fixture(t){
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aggregate-live-test-'));fs.chmodSync(dir,0o700);t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const dir=privateMkdtempSync(path.join(os.tmpdir(),'aggregate-live-test-'));fixtureChmodSync(dir,0o700);t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   const files={};for(const [role,key] of Object.entries(KEYS)){files[role]=path.join(dir,role);fs.writeFileSync(files[role],key,{mode:0o600});}
   const env={AUTH_MODE:'tunnel-service',BRIDGE_MODE:'tunnel',TUNNEL_SERVICE_OWNER_ID:OWNER,TUNNEL_SERVICE_KEY_FILE:files.ingress,QQ_SERVICE_KEY_FILE:files.qq,LARK_SERVICE_KEY_FILE:files.lark};
   return {dir,files,env,config:readConfig({...env,TUNNEL_SERVICE_OPERATION:'live',TUNNEL_LIVE_CHANNELS:'qq,lark'})};
@@ -81,7 +82,7 @@ test('live operation and explicit channel subset gate constructors; copied subse
     {TUNNEL_SERVICE_OPERATION:'live',TUNNEL_LIVE_CHANNELS:'qq,other'},{TUNNEL_SERVICE_OPERATION:'live',TUNNEL_LIVE_CHANNELS:'qq, lark'},
     {TUNNEL_SERVICE_OPERATION:'live',TUNNEL_LIVE_CHANNELS:'qq',TUNNEL_SERVICE_READINESS_ONLY:'true'}])assert.throws(()=>readConfig({...f.env,...change}));
   const channels=['qq'],config=validateConfig({...f.config,liveChannels:channels});channels.push('lark');assert.deepEqual(config.liveChannels,['qq']);assert.ok(Object.isFrozen(config.liveChannels));
-  assert.throws(()=>createApp({...f.config,ingressKeyFile:'/unreadable/private/key'}),/activation approval/);
+  assert.throws(()=>createApp({...f.config,ingressKeyFile:path.resolve('/unreadable/private/key')}),/activation approval/);
   assert.throws(()=>createUpstreamClient(f.config,{}),/activation approval/);
   assert.throws(()=>createApp({...f.config,operation:'readiness'}));assert.throws(()=>createApp({...f.config,liveChannels:[]}));
 });

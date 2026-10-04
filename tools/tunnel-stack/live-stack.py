@@ -6,6 +6,7 @@ try:
 except ImportError:
     fcntl = None
 import http.client
+import importlib.util
 import ipaddress
 import json
 import os
@@ -33,7 +34,8 @@ LOCK = STOP = STATE = LOG = None
 TRUSTED_NODE_PATH = '/usr/local/bin:/usr/bin:/bin'
 WINDOW_SECONDS = 1800
 PROXY_KEYS = ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy',
-              'https_proxy', 'all_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR')
+              'https_proxy', 'all_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
+              'NODE_EXTRA_CA_CERTS', 'NODE_USE_SYSTEM_CA')
 CHANNELS = ('qq', 'lark')
 PORTS = {'qq': 8787, 'lark': 8788, 'aggregate': 8789}
 SETTINGS = {'app_id', 'credentials_file', 'storage_key_file', 'database_path',
@@ -107,7 +109,8 @@ def external_path(value):
     path = Path(value)
     if not path.is_absolute() or '..' in path.parts or str(path) != value:
         raise PlanError()
-    resolved = path.resolve()
+    if sys.platform == 'win32': windows_runtime().win.canonical(value)
+    resolved = path if sys.platform == 'win32' else path.resolve()
     for repo in (QQ_REPO.resolve(), LARK_REPO.resolve()):
         if resolved == repo or repo in resolved.parents:
             raise PlanError()
@@ -132,7 +135,8 @@ def configure_runtime(path, node=None):
         if node is not None:
             selected = Path(node)
             if not selected.is_absolute() or '..' in selected.parts: raise PlanError()
-            selected = selected.resolve()
+            if sys.platform == 'win32': windows_runtime().win.canonical(str(selected))
+            else: selected = selected.resolve()
         else:
             found = shutil.which('node', path=TRUSTED_NODE_PATH)
             selected = Path(found).resolve() if found else None
@@ -143,12 +147,42 @@ def configure_runtime(path, node=None):
         raise PlanError() from error
 
 
+def linux_runtime_available():
+    return sys.platform == 'linux' and fcntl is not None and Path('/proc/self').exists()
+
+
+_windows_runtime = None
+def windows_runtime():
+    global _windows_runtime
+    if sys.platform != 'win32': raise RuntimeError('supported_runtime_required')
+    if _windows_runtime is None:
+        spec = importlib.util.spec_from_file_location('dot_windows_runtime', Path(__file__).with_name('windows-runtime.py'))
+        _windows_runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_windows_runtime)
+    return _windows_runtime
+
+
+def runtime_available():
+    return sys.platform == 'win32' or linux_runtime_available()
+
+
 def prepare_runtime():
-    """Linux/WSL only. Do not weaken lease or process checks for native Windows."""
-    if sys.platform != 'linux' or fcntl is None or not Path('/proc/self').exists():
-        raise RuntimeError('linux_or_wsl_required')
+    """Validate the selected platform without repairing existing permissions."""
+    if not runtime_available(): raise RuntimeError('supported_runtime_required')
     if any(value is None for value in (BASE, PRIVATE, NODE, CLIENT, PROFILE)):
         raise RuntimeError('explicit_runtime_configuration_required')
+    if sys.platform == 'win32':
+        win = windows_runtime().win
+        try:
+            for binary in (Path(NODE), CLIENT): win.trusted_executable(str(binary))
+            win.inspect(str(PROFILE))
+            for repo in (QQ_REPO, LARK_REPO, AGGREGATE_REPO):
+                if not repo.is_dir(): raise OSError()
+            with win.Directory(str(BASE), create=True): pass
+            with win.Directory(str(PRIVATE)): pass
+            with win.Directory(str(BASE / 'empty-home'), create=True): pass
+        except OSError as error: raise RuntimeError('unsafe_runtime_directory') from error
+        return
     for binary in (Path(NODE), CLIENT):
         info = binary.stat()
         if not stat.S_ISREG(info.st_mode) or not os.access(binary, os.X_OK) or info.st_mode & 0o022:
@@ -170,6 +204,7 @@ def prepare_runtime():
 
 def existing_client():
     # Read process names only, never command lines or environment/credential bytes.
+    if sys.platform == 'win32': return windows_runtime().existing_client(CLIENT)
     names = {'tunnel-client', CLIENT.name[:15]}
     try:
         for entry in Path('/proc').iterdir():
@@ -258,6 +293,13 @@ def load_plan(path):
 def environment(inherited):
     result = {key: inherited[key] for key in PROXY_KEYS if key in inherited}
     result.update(PATH=TRUSTED_NODE_PATH, HOME=str(BASE / 'empty-home'))
+    if sys.platform == 'win32':
+        # Fixed operator-selected binary directory, no inherited PATH or code
+        # injection options. Only explicit CA/proxy policy passes through.
+        for key in ('SystemRoot', 'WINDIR'):
+            if key in inherited: result[key] = inherited[key]
+        result.update(PATH=str(Path(NODE).parent), DOT_BRIDGE_PYTHON=sys.executable,
+                      USERPROFILE=str(BASE / 'empty-home'), DOT_BRIDGE_SUPERVISED='1')
     return result
 
 
@@ -312,6 +354,10 @@ def get_health(port, path='/healthz'):
 
 
 def safe_file(path, *, writing=False, text=None):
+    if sys.platform == 'win32':
+        win = windows_runtime().win
+        if writing: win.write_metadata(str(path), text.encode('utf-8')); return
+        return win.read(str(path), limit=8192).decode('utf-8')
     flags = (os.O_RDWR | os.O_CREAT if writing else os.O_RDONLY) | os.O_NOFOLLOW | os.O_NONBLOCK
     fd = os.open(path, flags, 0o600)
     try:
@@ -344,14 +390,19 @@ def ports_available():
         for handle in held: handle.close()
 
 
-def stop_children(children):
+def stop_children(children, *, grace_seconds=45):
     # Signal all owned children first, then allow one bounded graceful interval.
     forced, failed = False, False
     for process in reversed(children):
         if process.poll() is None:
-            try: process.terminate()
-            except OSError: failed = True
-    deadline = time.monotonic() + 45
+            try:
+                if sys.platform == 'win32' and getattr(process, '_dot_owned_windows', False):
+                    if getattr(process, '_dot_private_stop', False):
+                        process.stdin.write(b'stop\n'); process.stdin.flush(); process.stdin.close()
+                    elif not windows_runtime().request_break(process): failed = True
+                else: process.terminate()
+            except (OSError, subprocess.SubprocessError): failed = True
+    deadline = time.monotonic() + grace_seconds
     for process in reversed(children):
         try:
             if process.poll() is None:
@@ -377,7 +428,7 @@ def run(plan, *, approved=False, readiness=False, check=False):
     try:
         prepare_runtime()
     except (OSError, RuntimeError) as error:
-        allowed = {'linux_or_wsl_required', 'explicit_runtime_configuration_required',
+        allowed = {'supported_runtime_required', 'explicit_runtime_configuration_required',
                    'runtime_files_unavailable', 'unsafe_runtime_directory'}
         label = str(error) if isinstance(error, RuntimeError) and str(error) in allowed else 'runtime_files_unavailable'
         print(json.dumps({'stage': label})); return 1
@@ -390,14 +441,18 @@ def run(plan, *, approved=False, readiness=False, check=False):
         print('{"stage":"existing_client_conflict"}')
         return 1
     try:
-        lockfd = os.open(LOCK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        os.write(lockfd, str(os.getpid()).encode())
+        if sys.platform == 'win32':
+            native_lease = windows_runtime().Lease(LOCK)
+        else:
+            lockfd = os.open(LOCK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.write(lockfd, str(os.getpid()).encode())
     except OSError:
         if 'lockfd' in locals(): os.close(lockfd)
         print('{"stage":"stack_lock_requires_review"}')
         return 1
     children, events, capture_threads = [], [], []
+    job = None
     log_lock = threading.Lock()
     stopping = False
     status_code = 0
@@ -433,23 +488,39 @@ def run(plan, *, approved=False, readiness=False, check=False):
         return stopping or STOP.exists()
 
     def launch(spec, provider=None):
+        nonlocal job
         if cancelled():
             raise RuntimeError('stop_requested')
         command, cwd, env = spec
-        child = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.PIPE if provider else subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        options = {}
+        if sys.platform == 'win32':
+            # Suspend before assignment so no descendant can escape the owned
+            # kill-on-close Job Object. Every console window stays hidden.
+            if job is None: job = windows_runtime().OwnedJob()
+            startup = subprocess.STARTUPINFO(); startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW; startup.wShowWindow = 0
+            options.update(creationflags=4 | (subprocess.CREATE_NO_WINDOW if command[0] == NODE else subprocess.CREATE_NEW_CONSOLE), startupinfo=startup)
+        child = subprocess.Popen(command, cwd=cwd, env=env,
+                                 stdin=subprocess.PIPE if sys.platform == 'win32' and command[0] == NODE else subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE if provider else subprocess.DEVNULL, stderr=subprocess.DEVNULL, **options)
         children.append(child)
+        if sys.platform == 'win32' and isinstance(getattr(child, '_handle', None), int):
+            child._dot_owned_windows = True; child._dot_private_stop = command[0] == NODE
+            try: job.adopt_suspended(child)
+            except OSError:
+                child.kill(); raise RuntimeError('owned_process_guard_unavailable')
         if provider:
             thread = threading.Thread(target=capture, args=(child.stdout, provider), daemon=True)
             thread.start(); capture_threads.append(thread)
         return child
 
     def wait_listener(child, port):
+        deadline = time.monotonic() + 30
         for _ in range(100):
             if cancelled():
                 raise RuntimeError('stop_requested')
             if child.poll() is not None:
                 raise RuntimeError('child_start_failed')
+            if time.monotonic() >= deadline: raise RuntimeError('listener_timeout')
             try:
                 if get_health(port)[0] == 200:
                     time.sleep(.1)
@@ -515,26 +586,37 @@ def run(plan, *, approved=False, readiness=False, check=False):
             if not check and not cancelled(): report('connection_window_expired', update_state=False)
     except Exception as error:
         allowed = {'stop_requested', 'child_start_failed', 'listener_timeout', 'child_stopped',
-                   'unexpected_health_origin', 'poll_not_observed', 'metadata_storage_unavailable'}
+                   'unexpected_health_origin', 'poll_not_observed', 'metadata_storage_unavailable', 'owned_process_guard_unavailable'}
         label = str(error) if isinstance(error, RuntimeError) and str(error) in allowed else 'runtime_failed'
         try: report(label)
         except RuntimeError: print(json.dumps({'stage':label,'metadata_storage_unavailable':True}))
         status_code = 0 if label == 'stop_requested' else 1
     finally:
         shutdown = stop_children(children)
+        if job is not None:
+            try:
+                if not job.wait_empty():
+                    job.terminate(); shutdown.update(forced=True, graceful=False)
+                    if not job.wait_empty(): shutdown['all_exited'] = False
+            except OSError: shutdown['graceful'] = False
+            finally: job.close()
         for thread in capture_threads: thread.join(timeout=1)
         clean = shutdown['graceful']
         if clean:
             try:
-                held, current = os.fstat(lockfd), LOCK.lstat()
-                if (held.st_dev, held.st_ino) == (current.st_dev, current.st_ino):
-                    LOCK.unlink()
-                    STOP.unlink(missing_ok=True)
+                if sys.platform == 'win32':
+                    native_lease.release()
+                    try: windows_runtime().win.remove_private(str(STOP), expected=b'stop\n')
+                    except FileNotFoundError: pass
                 else:
-                    clean = False
+                    held, current = os.fstat(lockfd), LOCK.lstat()
+                    if (held.st_dev, held.st_ino) == (current.st_dev, current.st_ino):
+                        LOCK.unlink(); STOP.unlink(missing_ok=True)
+                    else: clean = False
             except OSError:
                 clean = False
-        os.close(lockfd)
+        if sys.platform == 'win32': native_lease.close()
+        else: os.close(lockfd)
         final_stage='stopped' if clean else 'stop_incomplete_requires_review'
         try: report(final_stage, children_stopped=shutdown['all_exited'], forced_shutdown=shutdown['forced'], authenticated_poll=False)
         except RuntimeError: print(json.dumps({'stage':final_stage,'children_stopped':shutdown['all_exited'],'forced_shutdown':shutdown['forced'],'metadata_storage_unavailable':True}))
@@ -568,13 +650,15 @@ def main(argv=None, *, readiness=False):
         print(json.dumps({'mode': 'readiness_stack_plan_only' if readiness else 'live_stack_plan_only',
                           'started': False, 'credentials_read': False, 'network_checked': False,
                           'requires_specific_runtime_approval': True, 'channels': list(CHANNELS),
-                          'supported_platform': 'Linux or WSL Linux; native Windows unsupported',
+                          'supported_platform': 'Linux or native Windows NTFS with an existing Python 3 interpreter',
                           'window_seconds': WINDOW_SECONDS,
                           'transport_profile_is_existing_file_reference_only': True,
                           'log_retention': 'latest 1000 fixed-classification events per run; previous run overwritten'}))
         return 0
     if (args.run or args.check) and not (args.confirm_readiness_runtime if readiness else args.confirm_live_runtime):
         print('{"stage":"explicit_plan_and_runtime_confirmation_required"}'); return 1
+    if any((args.run, args.check, args.status, args.stop)) and not runtime_available():
+        print('{"stage":"supported_runtime_required"}'); return 1
     if not args.runtime_config:
         print('{"stage":"explicit_runtime_configuration_required"}'); return 1
     try: configure_runtime(args.runtime_config, args.node)
@@ -605,9 +689,10 @@ def main(argv=None, *, readiness=False):
     if args.stop:
         if LOCK.exists():
             try:
-                fd = os.open(STOP, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                os.write(fd, b'stop\n')
-                os.close(fd)
+                if sys.platform == 'win32': windows_runtime().win.write_new(str(STOP), b'stop\n')
+                else:
+                    fd = os.open(STOP, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    os.write(fd, b'stop\n'); os.close(fd)
             except FileExistsError:
                 pass
             except OSError:

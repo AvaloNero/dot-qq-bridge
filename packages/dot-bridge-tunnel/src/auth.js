@@ -2,10 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { BridgeError, OWNER, SERVICE_HEADER, loopback } from './common.js';
+import { windowsReadPrivateFile } from '../../dot-bridge-platform/index.js';
 export const digest = key => createHash('sha256').update(key).digest();
 const keyPattern = /^[A-Za-z0-9_-]{43}$/;
 export function canonicalKey(key) { return typeof key === 'string' && keyPattern.test(key) && Buffer.from(key, 'base64url').toString('base64url') === key; }
 export function readServiceKey(file, allowNewline = false) {
+  if (process.platform === 'win32') {
+    let bytes;
+    try {
+      bytes = windowsReadPrivateFile(file, { maxBytes: allowNewline ? 44 : 43 });
+      const key = bytes.toString('utf8').replace(allowNewline ? /\n$/ : /$^/, '');
+      if (!canonicalKey(key)) throw new Error();
+      return key;
+    } catch { throw new Error('Tunnel service credential file is unavailable or unsafe'); }
+    finally { bytes?.fill(0); }
+  }
   const opened = []; let bytes;
   try {
     if (process.platform !== 'linux' || typeof file !== 'string' || !path.isAbsolute(file) || path.normalize(file) !== file || !fs.constants.O_NOFOLLOW) throw new Error();

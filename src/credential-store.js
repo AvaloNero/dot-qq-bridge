@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { openPrivateDirectory, readPrivateFile } from './private-files.js';
+import { windowsPrivateDestination, windowsWritePrivateFile } from '../packages/dot-bridge-platform/index.js';
 export function prepareCredentialDestination(directory) {
   const parent = openPrivateDirectory(directory, { create: true });
   try {
+    if (process.platform === 'win32') return windowsPrivateDestination(path.join(directory, 'credentials.json'));
     try { fs.lstatSync(`${parent.path}/credentials.json`); throw new Error('Credential destination already exists'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     return path.join(directory, 'credentials.json');
@@ -15,6 +17,13 @@ export function saveQqCredentials(candidate, { directory, expectedAppId, profile
       /[\s\x00-\x1f\x7f]/.test(candidate.appSecret) || profile !== 'tencent-sdk' ||
       candidate.ownerEvidence !== 'official-qr-response') throw new Error('Credential scope rejected');
   prepareCredentialDestination(directory);
+  if (process.platform === 'win32') {
+    const bytes = Buffer.from(JSON.stringify({ version: 1, provider: 'qq', profile, app_id: candidate.appId,
+      app_secret: candidate.appSecret, owner_openid: candidate.ownerOpenid, owner_evidence: 'official-qr-response' }) + '\n');
+    try { windowsWritePrivateFile(path.join(directory, 'credentials.json'), bytes); return { credentials_written: true }; }
+    catch { throw new Error('Private credential file could not be saved'); }
+    finally { bytes.fill(0); }
+  }
   const parent = openPrivateDirectory(directory);
   let fd;
   try {

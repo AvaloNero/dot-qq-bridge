@@ -142,6 +142,8 @@ uncertain provider acknowledgement.
 
 ## Storage, locks and cleanup
 
+Native Windows uses the shared [NTFS/DACL/handle platform layer](../packages/dot-bridge-platform/README.md), with a protected owner/SYSTEM-only parent, bounded private reads, atomic exclusive credential publication, pinned SQLite handles and native mode leases. Existing ACLs are validated and never repaired automatically. The POSIX modes and descriptor details below describe the Linux branch. Neither platform's offline results authorize real key reuse, callback approval or Events subscriptions.
+
 Linux descriptor-relative directory traversal rejects symlink components. Private
 leaf directories must be owned by the process user with exact mode 0700; key,
 credential, database and existing SQLite sidecar files must be regular files

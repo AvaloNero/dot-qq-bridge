@@ -1,3 +1,4 @@
+import { privateMkdtempSync } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ const now = Date.now();
 const config = () => ({ ...readConfig({ BRIDGE_MODE: 'sites', AUTH_MODE: 'sites', QQ_APP_ID: 'fixture', QQ_BOT_SECRET: 'fixture-secret', QQ_OWNER_OPENID: 'owner', MCP_OWNER_SUBJECT: 'sites:binding', QQ_TRANSPORT: 'gateway', STORAGE_KEY: Buffer.alloc(32,1).toString('base64') }), dbPath: ':memory:', sitesOrigin: 'https://site.example', sitesBindingId: 'binding', sitesPlatformToken: 'platform-fixture', sitesConnectorToken: 'connector-fixture' });
 test('mode must be explicit and shared lock rejects simultaneous tunnel/sites consumers', t => {
   assert.throws(() => bridgeMode({})); assert.equal(bridgeMode({ BRIDGE_MODE: 'sites' }), 'sites');
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(),'bridge-lock-test-')); t.after(() => fs.rmSync(directory,{recursive:true,force:true}));
+  const directory = privateMkdtempSync(path.join(os.tmpdir(),'bridge-lock-test-')); t.after(() => fs.rmSync(directory,{recursive:true,force:true}));
   const release = acquireModeLock(directory,'qq','app','tunnel');
   assert.throws(() => acquireModeLock(directory,'qq','app','sites')); release(); release();
   acquireModeLock(directory,'qq','app','sites')();

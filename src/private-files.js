@@ -1,9 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { windowsPrivateDirectory, windowsReadPrivateFile, windowsPrivateDatabase } from '../packages/dot-bridge-platform/index.js';
 
 // Linux descriptor-relative traversal: never follow a path component symlink.
 // The final directory must belong to this process user and be exactly 0700.
 export function openPrivateDirectory(directory, { create = false } = {}) {
+  if (process.platform === 'win32') {
+    try { return windowsPrivateDirectory(directory, { create }); }
+    catch { throw new Error('Private directory is unavailable or unsafe'); }
+  }
   let fd;
   try {
     if (process.platform !== 'linux' || !path.isAbsolute(directory) || path.normalize(directory) !== directory || !fs.constants.O_NOFOLLOW) throw new Error();
@@ -24,6 +29,10 @@ export function assertPrivateFile(stat, { maxBytes = 4096, exactBytes } = {}) {
       stat.size > maxBytes || (exactBytes !== undefined && stat.size !== exactBytes)) throw new Error('Private file is unavailable or unsafe');
 }
 export function readPrivateFile(file, options = {}) {
+  if (process.platform === 'win32') {
+    try { return windowsReadPrivateFile(file, options); }
+    catch { throw new Error('Private file is unavailable or unsafe'); }
+  }
   let parent, fd;
   try {
     if (!path.isAbsolute(file) || path.normalize(file) !== file) throw new Error();
@@ -42,6 +51,10 @@ export function readPrivateFile(file, options = {}) {
 // SQLite opens WAL/SHM beside the database. Pin that directory for its lifetime
 // and reject every existing database sidecar before SQLite can use it.
 export function privateDatabasePath(file, { create = false } = {}) {
+  if (process.platform === 'win32') {
+    try { return windowsPrivateDatabase(file, { create }); }
+    catch { throw new Error('Private database path is unavailable or unsafe'); }
+  }
   let parent;
   try {
     if (!path.isAbsolute(file) || path.normalize(file) !== file) throw new Error();
