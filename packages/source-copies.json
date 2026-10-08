@@ -56,8 +56,8 @@
       "package": "dot-bridge-tunnel",
       "file": "README.md",
       "source_sha256": "e954397b492a5c36602fb86f6c59a49044921d182d905a91db2aee58ddb32903",
-      "packaged_sha256": "bebefbc620588f7aa69d478b9bd4243d98a4a19c5ce0d5cf0476fa4a6652d59e",
-      "adaptation": "Document exact optional owner pending-message recovery via existing authenticated readiness/getter tools, retaining ordinary output."
+      "packaged_sha256": "54371e641b1ed2202fd8fae604503f0b12f59fd430dd8ccddea3c9196493c861",
+      "adaptation": "Document bounded Lark reply acknowledgement waiting, unchanged short read budgets and no retry or false success after an unknown outcome."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -133,8 +133,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/upstream.js",
       "source_sha256": "1f0f93dbd1218e6ddc85eacd5ae43bc418226a2d528ff2c7b5797a4c858851a9",
-      "packaged_sha256": "ca2532919bf56a8a1c213ce97845452b4089f519939c57503ebd0a6d5d984e56",
-      "adaptation": "Accept only exact current or original Lark preflight output schemas; retain all other catalog and authorization checks."
+      "packaged_sha256": "24c9a82c39369da69141666401f1f46d5a81fe960b5ffebc04d856c136561fb6",
+      "adaptation": "Use a 30-second budget only for synchronous reply_to_lark; preserve read/subscription deadlines, fixed routing and no retries."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -147,15 +147,15 @@
       "package": "dot-bridge-tunnel",
       "file": "test/live.test.js",
       "source_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
-      "packaged_sha256": "37e3cf30d13a48a73b63d8969b97c8d521d7152f4ea15d65abf620b3b38e1c76",
-      "adaptation": "Exercise pending-reference recovery, strict schema compatibility and accurate lifecycle projection through authenticated loopback aggregate HTTP."
+      "packaged_sha256": "9b30eee599ad348b601d3346c7f2c988dbeb99ea278621e8b593919914d66352",
+      "adaptation": "Verify reply timeout boundaries, unchanged read limits, late-ack rejection, strict pending-reference/status projection and no repeated mutations."
     },
     {
       "package": "dot-bridge-tunnel",
       "file": "test/sibling-contract.test.js",
       "source_sha256": "02b225bcaf3edf651794167950ce68a1f03058db3e1fded24e10de9094973a3b",
-      "packaged_sha256": "2cfbc9198d6c88c614733e92f5b7c51cd43626a44dd6fd79af2af2f2e5e6bdfb",
-      "adaptation": "Validate actual sibling catalogs and authenticated Lark owner-event recovery/read/one-reply chain with synthetic provider/callback adapters."
+      "packaged_sha256": "375841007e8d87e023cf6dd8194cb27b40f5d652a7c8dddc018269922f21d22b",
+      "adaptation": "Validate actual sibling catalogs and actual Lark token/reply delays beyond three seconds returning sent or uncertain once through aggregate HTTP."
     },
     {
       "package": "dot-bridge-transport",

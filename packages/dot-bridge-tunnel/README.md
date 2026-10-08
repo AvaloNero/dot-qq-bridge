@@ -102,6 +102,14 @@ and open sockets. Resource limits: 8 simultaneous authenticated requests, 120 pe
 minute, 32 open ingress connections, 8 KiB HTTP headers, 32 KiB request/response
 bodies, 5-second body deadline and 3-second deadline per ordinary upstream call.
 Readiness QQ checks make four bounded local requests; Lark checks make three.
+The synchronous owner `reply_to_lark` call has a 30-second upstream deadline:
+its token request and reply acknowledgement can each consume up to 10 seconds.
+Other read/catalog calls retain their 3-second limit. The candidate backend uses
+the same reply-specific response budget and finishes its HTTP response before
+resource cleanup. Message/subscription expiry still limits authorization. A
+missing acknowledgement remains unknown, is never projected as sent, and causes
+no automatic retry; a backend uncertain result remains uncertain.
+
 Live subscriptions have a 35-second local request deadline to accommodate the
 backend's bounded callback verification; live ingress has a 60-second idle limit.
 A mutation with an unavailable/malformed/timed-out result may already have committed.

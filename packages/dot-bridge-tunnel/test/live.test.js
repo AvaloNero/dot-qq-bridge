@@ -250,3 +250,38 @@ test('aggregate preserves explicit owner lifecycle reasons without claiming rout
     assert.equal(JSON.stringify(error).includes(SECRET),false);
   }
 });
+
+
+test('only Lark reply waits thirty seconds; timeout is unknown, late success cannot rewrite it and no request repeats',async t=>{
+  const f=await running(t);t.mock.timers.enable({apis:['setTimeout']});
+  let seen,acknowledge;const received=new Promise(resolve=>{seen=resolve;});
+  f.lark.state.response=(_req,res,body)=>{
+    let result;
+    if(body.method==='tools/call'){
+      f.lark.state.replyCalls++;
+      acknowledge=()=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:body.id,result:{resultType:'complete',isError:false,structuredContent:{message_id:'same-id',status:'sent',error:null}}}));};
+      seen();return;
+    }
+    result=body.method==='server/discover'?{supportedVersions:[VERSION],capabilities:{tools:{},events:{}}}:body.method==='tools/list'?{tools:clone(expectedBackendTools('lark',true))}:{events:[clone(liveEventDefinitions.lark)]};
+    res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:body.id,result:{resultType:'complete',...result}}));
+  };
+  let settled=false;const pending=f.tool('reply_to_lark',{message_id:'same-id',text:'fixed reply'}).then(value=>{settled=true;return value;});
+  await received;t.mock.timers.tick(29999);await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
+  t.mock.timers.tick(1);const result=await pending;assert.equal(result.status,502);assert.equal(result.body.error.code,-32030);
+  assert.equal(result.body.result,undefined);assert.equal(f.lark.state.replyCalls,1);
+  acknowledge();t.mock.timers.tick(60000);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.lark.state.replyCalls,1);assert.equal(result.body.result,undefined);assert.equal(result.text.includes('sent'),false);
+});
+
+test('ordinary reads retain their three-second upstream bound',async t=>{
+  const f=await running(t);t.mock.timers.enable({apis:['setTimeout']});
+  let seen;const received=new Promise(resolve=>{seen=resolve;});
+  f.lark.state.response=(_req,res,body)=>{
+    if(body.method==='tools/call'){seen();return;}
+    const result=body.method==='server/discover'?{supportedVersions:[VERSION],capabilities:{tools:{},events:{}}}:body.method==='tools/list'?{tools:clone(expectedBackendTools('lark',true))}:{events:[clone(liveEventDefinitions.lark)]};
+    res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:body.id,result:{resultType:'complete',...result}}));
+  };
+  let settled=false;const pending=f.tool('get_lark_message',{message_id:'same-id'}).then(value=>{settled=true;return value;});
+  await received;t.mock.timers.tick(2999);await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
+  t.mock.timers.tick(1);const result=await pending;assert.equal(result.status,502);assert.equal(result.body.error.code,-32030);
+});

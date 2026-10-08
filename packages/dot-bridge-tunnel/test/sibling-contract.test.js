@@ -87,7 +87,7 @@ test('synthetic actual sibling live catalogs and pending-callback preflight; no 
   assert.equal(requests,0);assert.equal(wsStarts,0);
 });
 
-test('actual owner Lark event can recover its pending ID through aggregate readiness and complete one reply', {skip:!available}, async t=>{
+for(const replyOutcome of ['sent','uncertain'])test(`actual owner Lark delayed reply returns ${replyOutcome} once through aggregate HTTP`, {skip:!available}, async t=>{
   const dir=privateMkdtempSync(path.join(os.tmpdir(),'aggregate-owner-recovery-'));fixtureChmodSync(dir,0o700);cleanupPrivateFixture(t,dir);
   const keys=[111,112,113].map(value=>Buffer.alloc(32,value).toString('base64url'));
   const files=keys.map((value,i)=>{const file=path.join(dir,`key-${i}`);fs.writeFileSync(file,value,{mode:0o600});return file;});
@@ -107,10 +107,13 @@ test('actual owner Lark event can recover its pending ID through aggregate readi
   }});
   const providerSend=async(url,options)=>{
     await options.beforeConnect();
+    // Real elapsed delay crosses the former aggregate three-second cutoff.
+    // Both provider steps remain inert and below their ten-second budgets.
+    await new Promise(resolve=>setTimeout(resolve,1700));
     if(url.endsWith('/tenant_access_token/internal'))return{status:200,body:Buffer.from(JSON.stringify({code:0,tenant_access_token:'synthetic-token',expire:7200}))};
     assert.equal(url,'https://open.feishu.cn/open-apis/im/v1/messages/fixture-message/reply');
     assert.equal(JSON.parse(JSON.parse(options.body).content).text,fixedReply);replies++;
-    return{status:200,body:Buffer.from(JSON.stringify({code:0,data:{message_id:'fixture-reply',chat_id:'chat'}}))};
+    return{status:200,body:Buffer.from(JSON.stringify(replyOutcome==='sent'?{code:0,data:{message_id:'fixture-reply',chat_id:'chat'}}:{code:0,data:{chat_id:'chat'}}))};
   };
   const session=createLarkOwnerMessageSession({credentials,expectedAppId:credentials.appId,acceptAnyOwnerText:true,fixedReply,waitForOwner:true,authenticatedCallbackDiscovery:true,callbackTransport:transport,recognizeTransport:ownerMessageExperimentStatus,proxyEnv,providerSend});
   const authConfig={...readTunnelReadinessConfig({...env,TUNNEL_SERVICE_KEY_FILE:files[2]}),host:'127.0.0.1',port:0};
@@ -134,6 +137,6 @@ test('actual owner Lark event can recover its pending ID through aggregate readi
   const metadataText=JSON.stringify(recovered.body);for(const privateValue of [text,'synthetic-token','synthetic-app-secret','private-fixture'])assert.equal(metadataText.includes(privateValue),false);
   assert.deepEqual((await call('check_lark_readiness')).body.result.structuredContent.pending_message,pending);assert.equal(replies,0);
   const read=await call('get_lark_message',{message_id:pending.message_id});assert.equal(read.status,200);assert.equal(read.body.result.structuredContent.text,text);
-  const reply=await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply});assert.equal(reply.status,200);assert.equal(reply.body.result.structuredContent.status,'sent');assert.equal(replies,1);
+  const replyStarted=Date.now();const reply=await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply});assert.ok(Date.now()-replyStarted>=3300);assert.equal(reply.status,200);assert.equal(reply.body.result.structuredContent.status,replyOutcome);assert.equal(replies,1);
   assert.notEqual((await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply})).status,200);assert.equal(replies,1);assert.equal(callbacks,2);
 });

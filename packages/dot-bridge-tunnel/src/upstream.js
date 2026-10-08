@@ -48,7 +48,10 @@ export function createUpstreamClient(input, keys, { approvedLive = false } = {})
         });active.add(req);
         req.on('socket',socket=>socket.once('connect',()=>{if(!loopback(socket.remoteAddress))finish(true);}));req.on('error',()=>finish(true));
         // No automatic retries: a timed-out mutation may already have committed.
-        timer=setTimeout(()=>finish(true),method === 'events/subscribe' ? 35000 : 3000);req.end(body);
+        // The owner Lark reply waits for a token and one provider acknowledgement
+        // (up to 10s each). Read/catalog budgets remain short and unchanged.
+        const timeoutMs=method==='events/subscribe'?35000:method==='tools/call'&&params.name==='reply_to_lark'?30000:3000;
+        timer=setTimeout(()=>finish(true),timeoutMs);req.end(body);
       }catch{finish(true);}
     });
   }
