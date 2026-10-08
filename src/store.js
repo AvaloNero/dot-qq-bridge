@@ -155,7 +155,8 @@ export class Store {
       throw new BridgeError('Queue capacity reached', { status: 503, code: -32013, retryable: true, data: { limit: 'queue', max: this.config.queueLimit } });
     }
   }
-  ingest(message, replayId, now, checkpoint) {
+  ingest(message, replayId, now, checkpoint, onAccepted = () => {}) {
+    if (typeof onAccepted !== 'function') throw new BridgeError('Invalid admission hook');
     return this.tx(() => {
       if (checkpoint) this.saveGatewayCheckpoint(checkpoint, now);
       this.run('DELETE FROM replays WHERE expires<?', now);
@@ -170,6 +171,9 @@ export class Store {
         message.owner, subscription.id, message.timestamp, message.expires, now, this.vault.seal(message.text, `message:${message.id}`), subscription.generation ?? (this.config.bridgeMode === 'sites' ? 1 : undefined));
       this.run('INSERT INTO jobs(id,kind,message_id,subscription_id,next_at) VALUES (?,?,?,?,?)', `event:${eventId}`, 'event', message.id, subscription.id, now);
       this.run('INSERT INTO replays VALUES (?,?)', replayId, now + 2 * this.config.signatureSkewSeconds * 1000);
+      // Optional code-injected admission budget shares this exact transaction.
+      // Async hooks cannot make a durable claim after the message commits.
+      if (onAccepted(message) !== undefined) throw new BridgeError('Admission hook must complete synchronously');
       return 'queued';
     });
   }
