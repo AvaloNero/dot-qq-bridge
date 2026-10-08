@@ -10,14 +10,27 @@ export const pendingQqMessageSchema = { anyOf: [{ type: 'null' }, { type: 'objec
 
 // One approved owner input and one fixed provider attempt. The existing Store
 // remains authoritative for owner, subscription, passive reply window and ACKs.
-export function installQqOwnerMessagePolicy(bridge, { fixedReply, clock = Date.now, onSelected = () => {}, onTerminal = () => {} } = {}) {
+export function installQqOwnerMessagePolicy(bridge, { fixedReply, existingDatabase = false, clock = Date.now, onSelected = () => {}, onTerminal = () => {} } = {}) {
   plainText(fixedReply);
   const store = bridge.store;
-  if (store.get('SELECT value FROM metadata WHERE key=?', KEY) ||
-      ['messages', 'replies', 'jobs', 'subscriptions'].some(table => store.get(`SELECT count(*) AS n FROM ${table}`).n)) {
+  const previous = store.get('SELECT value FROM metadata WHERE key=?', KEY);
+  if (typeof existingDatabase !== 'boolean') throw new Error('Invalid owner-message recovery boundary');
+  let restored;
+  if (previous) {
+    try {
+      restored = store.vault.open(previous.value, CONTEXT);
+      const fields = ['version', 'phase', 'messageId', 'expires', 'replyAttempted', 'replyDigest'];
+      if (!restored || Array.isArray(restored) || Object.keys(restored).length !== fields.length || !fields.every(key => Object.hasOwn(restored, key)) ||
+          restored.version !== 1 || restored.phase !== 'waiting' || restored.messageId !== null || restored.expires !== null ||
+          restored.replyAttempted !== false || restored.replyDigest !== hash(fixedReply)) throw new Error();
+    } catch { throw new Error('Existing owner-message budget cannot be reset; consumed or uncertain outcomes are not replayed'); }
+  } else if (existingDatabase) throw new Error('Existing database has no verified owner-message budget; cannot be reset');
+  if (['messages', 'replies', 'jobs', 'subscriptions', 'gateway_lease', 'replays'].some(table => store.get(`SELECT count(*) AS n FROM ${table}`).n) ||
+      store.get("SELECT count(*) AS n FROM metadata WHERE key IN ('gateway_session','subscription_epoch')").n) {
     throw new Error('Owner-message test requires an unused durable queue; existing budgets cannot be reset');
   }
   let state = { version: 1, phase: 'waiting', messageId: null, expires: null, replyAttempted: false, replyDigest: hash(fixedReply) };
+  if (restored) state = restored; // Reuse exactly the original unused budget; no write/reset.
   let closed = false, bodiesCleared = false, providerAcknowledged = false;
   const save = (phase, changes = {}, withinTransaction = false) => {
     const next = { ...state, ...changes, phase };
@@ -25,7 +38,7 @@ export function installQqOwnerMessagePolicy(bridge, { fixedReply, clock = Date.n
     if (withinTransaction) write(); else store.tx(write);
     state = next;
   };
-  save('waiting');
+  if (!restored) save('waiting');
   const active = () => {
     if (closed || (state.expires !== null && clock() >= state.expires)) throw new BridgeError('Owner-message scope closed', { code: -32012 });
   };
@@ -39,7 +52,7 @@ export function installQqOwnerMessagePolicy(bridge, { fixedReply, clock = Date.n
   const status = () => ({ phase: state.phase, inbound_selected: state.messageId !== null,
     reply_queued: ['reply_queued', 'reply_attempted', 'sent', 'uncertain'].includes(state.phase),
     reply_attempted: state.replyAttempted, provider_acknowledged: providerAcknowledged,
-    bodies_cleared: bodiesCleared, closed, max_incoming: 1, max_reply_attempts: 1,
+    bodies_cleared: bodiesCleared, closed, budget_recovered: !!restored, max_incoming: 1, max_reply_attempts: 1,
     reply_deadline: state.expires === null ? null : new Date(state.expires).toISOString(), current_dot_roundtrip_verified: false });
   const finishScope = (phase, acknowledged = false) => {
     if (closed && !acknowledged) return;

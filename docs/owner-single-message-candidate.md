@@ -49,10 +49,19 @@ cleanup nulls only the selected message/reply text fields, retaining receipt,
 deduplication and budget metadata. This is logical database cleanup, not a claim
 of forensic erasure of prior encrypted SQLite pages or platform logs.
 
-An already existing database is refused at entry. The candidate does not silently
-adopt prior queues or reset a consumed/uncertain budget after a restart. Keep that
-database and inspect its authorized metadata for recovery; never delete it merely
-to permit another send.
+An existing database may be reused only when its original encrypted budget is
+exactly `waiting`, has no selected message, reply deadline or attempt, and matches
+the same fixed reply. Subscriptions, messages, replies, jobs, gateway leases,
+replays and subscription/gateway checkpoints must all be absent. This check runs
+inside the original identity-bound Store under the existing mode lock. The
+original budget ciphertext is reused without replacement; `budget_recovered`
+reports this narrow case. An existing database with no valid budget is rejected.
+
+Any selected message, attempt, consumed/uncertain state, subscription or protocol
+checkpoint is refused without changing or replaying it. Existing positive
+receipts are preserved. This is not general queue recovery. Keep the database
+and inspect its authorized metadata; never delete it or choose an empty database
+merely to permit another send.
 
 `startService` and `callbackFactory` are code-injected test seams only; there is no
 environment variable or CLI module-path selector. Production callers leave them

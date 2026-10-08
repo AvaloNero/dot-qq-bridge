@@ -12,12 +12,10 @@ import { createApp as createAggregate } from '../packages/dot-bridge-tunnel/src/
 import { readConfig as aggregateConfig } from '../packages/dot-bridge-tunnel/src/config.js';
 import { VERSION, SERVICE_HEADER, metadata } from '../packages/dot-bridge-tunnel/src/common.js';
 
-test('owner-wait runtime requires explicit scope and refuses to reset an existing database', async t => {
+test('owner-wait runtime requires explicit scope and rejects a missing database reference', async () => {
   await assert.rejects(startQqOwnerMessage({}, {}), /approval/);
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-owner-runtime-')); t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const file = path.join(directory, 'existing.db'); fs.writeFileSync(file, 'synthetic');
-  await assert.rejects(startQqOwnerMessage({ bridgeMode: 'tunnel', authMode: 'tunnel-service', tunnelServiceOperation: 'live', qqTransport: 'gateway', qqApiProfile: 'tencent-sdk', dbPath: file },
-    { approvedSingleMessage: true, acceptAnyOwnerText: true, waitForOwner: true, fixedReply: 'fixed' }), /cannot be reset/);
+  await assert.rejects(startQqOwnerMessage({ bridgeMode: 'tunnel', authMode: 'tunnel-service', tunnelServiceOperation: 'live', qqTransport: 'gateway', qqApiProfile: 'tencent-sdk' },
+    { approvedSingleMessage: true, acceptAnyOwnerText: true, waitForOwner: true, fixedReply: 'fixed' }), /database required/);
 });
 
 test('real Bridge/Store owner-wait composition renews only the same authenticated grant and reports protocol READY', async t => {

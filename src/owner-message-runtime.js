@@ -17,7 +17,8 @@ export async function startQqOwnerMessage(config, { approvedSingleMessage = fals
       config.qqTransport !== 'gateway' || config.qqApiProfile !== 'tencent-sdk' ||
       typeof fixedReply !== 'string' || !fixedReply.trim() || fixedReply.length > 2000 || signal?.aborted ||
       typeof startService !== 'function' || typeof callbackFactory !== 'function') throw new Error('Explicit QQ owner-message approval required');
-  if (typeof config.dbPath !== 'string' || fs.existsSync(config.dbPath)) throw new Error('Dedicated unused QQ test database required; existing budgets cannot be reset');
+  if (typeof config.dbPath !== 'string') throw new Error('Dedicated QQ test database required');
+  const existingDatabase = fs.existsSync(config.dbPath);
   config = { ...config, callbackHosts: [...config.callbackHosts], maxAttempts: 1 };
   const callback = callbackFactory({ approvedOwnerMessageExperiment: true, channel: 'qq',
     acceptAnyOwnerText: true, waitForOwner: true, proxyEnv });
@@ -56,7 +57,7 @@ export async function startQqOwnerMessage(config, { approvedSingleMessage = fals
         const app = createApp(settings, options); pendingApp = app;
         const bridge = app.bridge, subscribe = bridge.subscribe.bind(bridge);
         let bound, verified = false;
-        policy = installQqOwnerMessagePolicy(bridge, { fixedReply,
+        policy = installQqOwnerMessagePolicy(bridge, { fixedReply, existingDatabase,
           onSelected({ expires }) { clearTimeout(timer); timer = setTimeout(() => policy.expire(), Math.max(1, expires - Date.now())); },
           onTerminal() { emit({ event: 'qq_owner_test_terminal', ...status() }); setImmediate(() => close().catch(() => {})); } });
         bridge.subscribe = async (params, principal) => {
