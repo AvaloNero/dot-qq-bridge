@@ -8,6 +8,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {makeCallbackTransport,preflightCallbackTransport,projectCallbackTransportStatus,callbackTransportStatusSchema,
   CallbackTransportError,TRANSPORT_ERROR_CODES,signedHeaders} from '../index.js';
+import {configuredProxy,bypassMatches} from '../transport.js';
 const URL='https://callback.example.test/private-path?synthetic=only';
 const HOST='callback.example.test',PROXY={HTTPS_PROXY:'http://proxy.example.test:3128'},BODY=Buffer.from('{"kind":"synthetic"}');
 const HEADERS=signedHeaders({id:'sub_test',key:Buffer.alloc(32,99)},'evt_test',BODY,1800000000000);
@@ -70,50 +71,47 @@ test('direct pin validates every answer and preserves original TLS identity with
   const {options}=f.calls.requests[0];assert.equal(options.agent,false);assert.equal(options.autoSelectFamily,false);assert.equal(options.servername,HOST);assert.equal(options.rejectUnauthorized,true);
   const privateAnswer=direct({answers:[{address:'93.184.216.34',family:4},{address:'127.0.0.1',family:4}]});await assert.rejects(()=>privateAnswer.run(),e=>e.code==='blocked_address');assert.equal(privateAnswer.calls.requests.length,0);
 });
-test('injected managed adapter receives immutable validated target and current revocation gate; no built-in route is used',async()=>{
-  let directCalls=0,adapterCalls=0;const managedAdapter={send:async(target,request)=>{
-    adapterCalls++;assert.ok(Object.isFrozen(target));assert.ok(Object.isFrozen(target.addresses));assert.ok(Object.isFrozen(target.addresses[0]));assert.ok(Object.isFrozen(target.tls));
-    assert.equal(target.url,URL);assert.equal(target.hostname,HOST);assert.equal(target.port,443);assert.equal(target.destinationBinding,'delegated_unverified');assert.equal(target.tls.rejectUnauthorized,true);assert.equal(target.tls.servername,HOST);
-    assert.equal(request.method,'POST');assert.equal(request.headers.host,HOST);assert.equal(request.headers.authorization,undefined);assert.ok(request.signal instanceof AbortSignal);await request.beforeConnect();return response(202,Buffer.from('{}'),{'x-private':'PRIVATE_UPSTREAM'});
-  }};
-  const send=makeCallbackTransport({proxyEnv:PROXY,managedAdapter,lookup:async()=>[{address:'93.184.216.34',family:4}],request:()=>{directCalls++;throw Error('no direct');}});
-  assert.equal(send.preflight().mode,'managed');assert.equal(send.preflight().network_checked,false);const result=await send(URL,opts());assert.equal(result.status,202);assert.deepEqual(Object.keys(result.headers),[]);assert.equal(adapterCalls,1);assert.equal(directCalls,0);
+test('a raw callable managed adapter is unverified and receives neither target nor credentials',async()=>{
+  let dns=0,adapter=0,requests=0;
+  const send=makeCallbackTransport({proxyEnv:PROXY,managedAdapter:{send:async()=>{adapter++;return response();}},
+    lookup:async()=>{dns++;throw Object.assign(new Error('synthetic DNS'),{code:'EAI_AGAIN'});},request:()=>requests++});
+  assert.deepEqual(send.preflight(),{ready:false,mode:'blocked',reason:'proxy_policy_unverified',proxy_configured:true,destination_binding:'unverified',network_checked:false});
+  await assert.rejects(()=>send(URL,opts()),e=>e.code==='proxy_policy_unverified');
+  assert.deepEqual({dns,adapter,requests},{dns:0,adapter:0,requests:0});
 });
-test('managed response validation and callback failures remain bounded/static and never fall back',async()=>{
-  for(const reply of [()=>{throw Error('PRIVATE_SECRET '+URL);},()=>response(302),()=>response(200,Buffer.alloc(8193)),()=>response(200,Buffer.from('{}'),{'content-encoding':'gzip'}),()=>({status:200,body:'not-buffer'})]){
-    let calls=0;const send=makeCallbackTransport({maxBytes:8192,proxyEnv:PROXY,lookup:async()=>[{address:'93.184.216.34',family:4}],request:()=>assert.fail('no direct fallback'),managedAdapter:{send:async()=>{calls++;return reply();}}});
-    await assert.rejects(()=>send(URL,opts()),e=>e instanceof CallbackTransportError&&TRANSPORT_ERROR_CODES.includes(e.code)&&e.reason===e.code&&!JSON.stringify(e).includes('PRIVATE')&&e.cause===undefined);assert.equal(calls,1);
+test('synthetic success, malformed responses and raw adapter exceptions cannot certify managed readiness',async()=>{
+  for(const reply of [()=>{throw Error('PRIVATE_SECRET '+URL);},()=>response(200),()=>response(302),()=>response(200,Buffer.alloc(8193)),()=>({status:200,body:'not-buffer'})]){
+    let calls=0;const send=makeCallbackTransport({proxyEnv:PROXY,lookup:()=>assert.fail('no DNS'),request:()=>assert.fail('no direct fallback'),managedAdapter:{send:async()=>{calls++;return reply();}}});
+    await assert.rejects(()=>send(URL,opts()),e=>e instanceof CallbackTransportError&&e.code==='proxy_policy_unverified'&&!JSON.stringify(e).includes('PRIVATE')&&e.cause===undefined);assert.equal(calls,0);
   }
 });
-test('managed abort and total deadline cancel the adapter; late results cannot report success or reconnect',async()=>{
-  for(const mode of ['abort','timeout']){
-    let enter;const ready=new Promise(r=>enter=r);let release;const pending=new Promise(r=>release=r);const c=new AbortController();let request;
-    const send=makeCallbackTransport({timeoutMs:mode==='timeout'?10:1000,proxyEnv:PROXY,lookup:async()=>[{address:'93.184.216.34',family:4}],managedAdapter:{send:async(_t,r)=>{request=r;enter();return pending;}}});
-    const sending=send(URL,opts({signal:c.signal}));await ready;if(mode==='abort')c.abort();await assert.rejects(sending,e=>e.code===mode||e.code==='aborted');assert.equal(request.signal.aborted,true);
-    release(response());await assert.rejects(async()=>request.beforeConnect(),e=>e.code==='aborted');
+test('unverified pending managed adapters never acquire in-flight authority even when the caller aborts',async()=>{
+  for(const aborted of [false,true]){
+    const controller=new AbortController();if(aborted)controller.abort();let calls=0;
+    const send=makeCallbackTransport({proxyEnv:PROXY,managedAdapter:{send:()=>{calls++;return new Promise(()=>{});}},lookup:()=>assert.fail('no DNS')});
+    await assert.rejects(()=>send(URL,opts({signal:controller.signal})),e=>e.code==='proxy_policy_unverified');assert.equal(calls,0);
   }
 });
-test('selected proxy and NO_PROXY CIDR are enforced before delegation; unsupported fallbacks never become direct',async()=>{
-  const env={https_proxy:'http://chosen.example.test',HTTPS_PROXY:'unused-invalid',ALL_PROXY:'socks5://unused/path',no_proxy:'10.0.0.0/8',NO_PROXY:'invalid/unused'};
+test('selected proxy and NO_PROXY parsing remain strict without treating local DNS as proxy proof',async()=>{
+  const env={https_proxy:'http://chosen.example.test',HTTPS_PROXY:'unused-invalid',ALL_PROXY:'socks5://unused/path',no_proxy:'93.184.216.0/24',NO_PROXY:'invalid/unused'};
+  const proxy=configuredProxy(env);assert.equal(bypassMatches(proxy,HOST,['93.184.216.34']),true);assert.equal(bypassMatches(proxy,HOST,['1.1.1.1']),false);
   assert.equal(preflightCallbackTransport({proxyEnv:env}).reason,'proxy_policy_unverified');assert.equal(preflightCallbackTransport({proxyEnv:{ALL_PROXY:'socks5://only/path'}}).reason,'proxy_unsupported');
-  let delegated=0;const send=makeCallbackTransport({proxyEnv:{...env,no_proxy:'93.184.216.0/24'},lookup:async()=>[{address:'93.184.216.34',family:4}],managedAdapter:{send:async()=>{delegated++;return response();}}});
-  await assert.rejects(()=>send(URL,opts()),e=>e.code==='proxy_unsupported');assert.equal(delegated,0);
+  const send=makeCallbackTransport({proxyEnv:env,managedAdapter:{send:()=>assert.fail('no delegation')},lookup:()=>assert.fail('no local lookup to certify proxy')});
+  await assert.rejects(()=>send(URL,opts()),e=>e.code==='proxy_policy_unverified');
   assert.equal(preflightCallbackTransport({proxyEnv:null}).reason,'proxy_unsupported');
 });
-test('mutating selected proxy or adapter cannot silently change an existing sender route',async()=>{
-  const proxyEnv={...PROXY},managedAdapter={send:async()=>response()};const send=makeCallbackTransport({proxyEnv,managedAdapter,lookup:async()=>assert.fail('no DNS after mutation')});
+test('proxy or adapter changes cannot turn an unverified sender into an allowed route',async()=>{
+  const proxyEnv={...PROXY},managedAdapter={send:async()=>response()},send=makeCallbackTransport({proxyEnv,managedAdapter,lookup:()=>assert.fail('no DNS')});
   managedAdapter.send=async()=>response();assert.equal(send.preflight().reason,'adapter_invalid');await assert.rejects(()=>send(URL,opts()),e=>e.code==='adapter_invalid');
-  const other=makeCallbackTransport({proxyEnv,managedAdapter});delete proxyEnv.HTTPS_PROXY;assert.equal(other.preflight().reason,'proxy_unsupported');await assert.rejects(()=>other(URL,opts()),e=>e.code==='proxy_unsupported');
+  delete proxyEnv.HTTPS_PROXY;assert.equal(send.preflight().reason,'adapter_invalid');await assert.rejects(()=>send(URL,opts()),e=>e.code==='adapter_invalid');
+  const unchangedAdapter={send:async()=>response()},env={...PROXY},other=makeCallbackTransport({proxyEnv:env,managedAdapter:unchangedAdapter});delete env.HTTPS_PROXY;
+  assert.equal(other.preflight().reason,'proxy_unsupported');await assert.rejects(()=>other(URL,opts()),e=>e.code==='proxy_unsupported');
 });
-test('managed guarded-operation callback preserves same-stack authorization and fences queued revocation',async()=>{
-  let checks=0,revoked=false,operations=0;
-  const send=makeCallbackTransport({proxyEnv:PROXY,lookup:async()=>[{address:'93.184.216.34',family:4}],managedAdapter:{send:async(_target,request)=>{
-    const value=request.beforeConnect(()=>{assert.equal(revoked,false);operations++;return 'synchronous';});
-    assert.equal(value,'synchronous');await Promise.resolve();assert.equal(revoked,true);
-    request.beforeConnect(()=>{operations++;});return response();
-  }}});
-  await assert.rejects(()=>send(URL,opts({beforeConnect:()=>{checks++;if(revoked)throw Error('revoked');if(checks===4)queueMicrotask(()=>{revoked=true;});}})),e=>e.code==='gate_failed');
-  assert.equal(operations,1);
+test('a business authorization gate cannot replace the missing managed destination-binding capability',async()=>{
+  let gates=0,operations=0;
+  const send=makeCallbackTransport({proxyEnv:PROXY,lookup:()=>assert.fail('no DNS'),managedAdapter:{send:async(_target,request)=>request.beforeConnect(()=>{operations++;return response();})}});
+  await assert.rejects(()=>send(URL,opts({beforeConnect:()=>{gates++;}})),e=>e.code==='proxy_policy_unverified');
+  assert.equal(gates,0);assert.equal(operations,0);
 });
 test('status preflight never substitutes explicit null or trusts inherited adapter methods',()=>{
   assert.deepEqual(makeCallbackTransport({proxyEnv:null}).preflight(),{ready:false,mode:'blocked',reason:'proxy_unsupported',proxy_configured:false,destination_binding:'unverified',network_checked:false});
@@ -126,4 +124,15 @@ test('shared package copies independently without dependencies, workspace paths 
   for(const name of ['package.json','index.js','status.js','transport.js','README.md'])fs.copyFileSync(path.join(root,name),path.join(dir,name));
   const script=`import {makeCallbackTransport,callbackTransportStatusSchema} from ${JSON.stringify(pathToFileURL(path.join(dir,'index.js')).href)}; const send=makeCallbackTransport({proxyEnv:{}}); if(!send.preflight().ready||callbackTransportStatusSchema.required.length!==6)throw Error('copy contract');`;
   const result=spawnSync(process.execPath,['--input-type=module','-e',script],{env:{},encoding:'utf8',timeout:3000});assert.equal(result.status,0);assert.equal(result.stdout,'');assert.equal(result.stderr,'');
+});
+
+test('legacy managed/delegated-unverified ready projections are rejected',()=>{
+  assert.throws(()=>projectCallbackTransportStatus({ready:true,mode:'managed',reason:'none',proxy_configured:true,destination_binding:'delegated_unverified',network_checked:false}));
+  for(const adapter of [{sendPublicHttps:async()=>response()},{send:async()=>response(),verified:true}]){
+    assert.equal(preflightCallbackTransport({proxyEnv:PROXY,managedAdapter:adapter}).reason,'adapter_invalid');
+  }
+});
+test('direct EAI_AGAIN remains a DNS failure rather than a managed capability classification',async()=>{
+  let dns=0;const f=direct({transport:{lookup:async()=>{dns++;throw Object.assign(new Error('synthetic'),{code:'EAI_AGAIN'});}}});
+  await assert.rejects(()=>f.run(),e=>e.code==='dns_failed');assert.equal(dns,1);assert.equal(f.calls.requests.length,0);
 });

@@ -58,7 +58,7 @@ function noProxyRules(env){
     if(!host||host.length>253||!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(host)||host.split('.').some(label=>!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)))throw error('proxy_unsupported');rules.push({kind:suffix?'suffix':'host',host});
   }return rules;
 }
-function configuredProxy(env){
+export function configuredProxy(env){
   if(!env||typeof env!=='object')throw error('proxy_unsupported');const raw=selected(env,'https_proxy','HTTPS_PROXY');
   if(!present(raw)){if(PROXY_NAMES.some(name=>present(env[name])))throw error('proxy_unsupported');return null;}
   if(typeof raw!=='string'||raw.length>2048||/[\x00-\x20\x7f\\#]/.test(raw))throw error('proxy_unsupported');let url;try{url=new URL(raw);}catch{throw error('proxy_unsupported');}
@@ -66,13 +66,15 @@ function configuredProxy(env){
   if(url.username||url.password){let u,p;try{u=decodeURIComponent(url.username);p=decodeURIComponent(url.password);}catch{throw error('proxy_unsupported');}if(!u||u.includes(':')||/[\x00-\x1f\x7f]/.test(u+p))throw error('proxy_unsupported');authorization=`Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;url.username='';url.password='';}
   return {url,authorization,noProxy:noProxyRules(env)};
 }
-function bypassMatches(proxy,host,addresses=[]){return !!proxy&&proxy.noProxy.some(rule=>rule.kind==='all'||(rule.kind==='host'&&rule.host===host)||(rule.kind==='suffix'&&(rule.host===host||host.endsWith('.'+rule.host)))||(rule.kind==='ip'&&addresses.some(a=>(isIP(a)===6?new URL(`https://[${a}]/`).hostname:a)===rule.host))||(rule.kind==='cidr'&&addresses.some(a=>{const p=ipNumber(a);return p.family===rule.family&&(p.value>>BigInt(p.bits-rule.prefix)).toString(16)===rule.network;})));}
+export function bypassMatches(proxy,host,addresses=[]){return !!proxy&&proxy.noProxy.some(rule=>rule.kind==='all'||(rule.kind==='host'&&rule.host===host)||(rule.kind==='suffix'&&(rule.host===host||host.endsWith('.'+rule.host)))||(rule.kind==='ip'&&addresses.some(a=>(isIP(a)===6?new URL(`https://[${a}]/`).hostname:a)===rule.host))||(rule.kind==='cidr'&&addresses.some(a=>{const p=ipNumber(a);return p.family===rule.family&&(p.value>>BigInt(p.bits-rule.prefix)).toString(16)===rule.network;})));}
 function adapterValid(adapter){return adapter===undefined||adapter===null||(!!adapter&&typeof adapter==='object'&&!Array.isArray(adapter)&&Object.keys(adapter).length===1&&Object.hasOwn(adapter,'send')&&typeof adapter.send==='function');}
 function blocked(reason,configured){return projectCallbackTransportStatus({ready:false,mode:'blocked',reason,proxy_configured:configured,destination_binding:'unverified',network_checked:false});}
 export function preflightCallbackTransport(options={}){
   let configured=false;try{if(!options||typeof options!=='object'||Array.isArray(options))throw error('invalid_options');const env=options.proxyEnv===undefined?process.env:options.proxyEnv;if(!env||typeof env!=='object')throw error('proxy_unsupported');configured=PROXY_NAMES.some(name=>present(env[name]));const proxy=configuredProxy(env);
-    if(!adapterValid(options.managedAdapter))return blocked('adapter_invalid',configured);if(proxy&&!options.managedAdapter)return blocked('proxy_policy_unverified',true);
-    return projectCallbackTransportStatus({ready:true,mode:proxy?'managed':'direct',reason:'none',proxy_configured:!!proxy,destination_binding:proxy?'delegated_unverified':'direct_pinned',network_checked:false});
+    if(!adapterValid(options.managedAdapter))return blocked('adapter_invalid',configured);// No reviewed managed final-resolution/public-address/dial-binding implementation is installed.
+    // A callable send (or successful fixed-target GET) is not that capability.
+    if(proxy)return blocked('proxy_policy_unverified',true);
+    return projectCallbackTransportStatus({ready:true,mode:'direct',reason:'none',proxy_configured:false,destination_binding:'direct_pinned',network_checked:false});
   }catch{return blocked('proxy_unsupported',configured);}
 }
 const REQUEST_HEADERS=new Set(['content-type','webhook-id','webhook-timestamp','webhook-signature','x-mcp-subscription-id']);
@@ -82,7 +84,8 @@ function requestHeaders(input,url,size){
   if(bytes>MAX_BYTES||(h['content-type']&&h['content-type']!=='application/json'))throw error('invalid_input');return {...h,host:url.hostname,'content-length':String(size),accept:'application/json','accept-encoding':'identity'};
 }
 const CRITICAL=new Set(['content-type','content-length','content-encoding','transfer-encoding','location']);
-function responseHeaders(res,maxBytes){
+// Shared internal response projection for reviewed transport implementations.
+export function responseHeaders(res,maxBytes){
   if(!Array.isArray(res.rawHeaders)||res.rawHeaders.length%2||res.rawHeaders.length>64||!res.headers||typeof res.headers!=='object'||Array.isArray(res.headers))throw error('invalid_response');
   const h=Object.create(null),names=new Set();let size=0;
   for(let i=0;i<res.rawHeaders.length;i+=2){const k=res.rawHeaders[i],v=res.rawHeaders[i+1];if(typeof k!=='string'||!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(k)||typeof v!=='string'||/[^\x09\x20-\x7e]/.test(v))throw error('invalid_response');const n=k.toLowerCase();size+=k.length+v.length+4;if(size>MAX_BYTES||(CRITICAL.has(n)&&names.has(n)))throw error('invalid_response');names.add(n);if(CRITICAL.has(n))h[n]=v;}
@@ -91,18 +94,13 @@ function responseHeaders(res,maxBytes){
   if(h['content-length']!==undefined&&(!/^(?:0|[1-9]\d{0,8})$/.test(h['content-length'])||Number(h['content-length'])>maxBytes))throw error('invalid_response');return h;
 }
 function statusCode(status){if(!Number.isInteger(status)||status<200||status>599)throw error('invalid_response');if(status>=300&&status<400)throw error('redirect_rejected');}
-function projectResponse(value,maxBytes){
-  if(!value||typeof value!=='object')throw error('invalid_response');statusCode(value.status);if(!Buffer.isBuffer(value.body))throw error('invalid_response');if(value.body.length>maxBytes)throw error('response_too_large');
-  const headers=value.headers??{};if(!headers||typeof headers!=='object'||Array.isArray(headers))throw error('invalid_response');const rawHeaders=Object.entries(headers).flatMap(([k,v])=>(Array.isArray(v)?v:[v]).flatMap(x=>[k,x]));const h=responseHeaders({headers,rawHeaders},maxBytes);
-  if(h['content-length']!==undefined&&Number(h['content-length'])!==value.body.length)throw error('invalid_response');return {status:value.status,headers:h,body:Buffer.from(value.body)};
-}
 export function makeCallbackTransport(options={}){
   if(!options||typeof options!=='object'||Array.isArray(options))throw error('invalid_options');
   const {lookup=dnsLookup,request=https.request,timeoutMs=10000,maxBytes=MAX_BODY_BYTES,maxRequestBytes=MAX_BODY_BYTES,proxyEnv=process.env,managedAdapter,callbackPolicy='exact-hosts'}=options;
   if(typeof lookup!=='function'||typeof request!=='function'||!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>30000||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>MAX_BODY_BYTES||!Number.isInteger(maxRequestBytes)||maxRequestBytes<1||maxRequestBytes>MAX_BODY_BYTES||!['exact-hosts','authenticated-dynamic-public-https'].includes(callbackPolicy))throw error('invalid_options');
   let adapterSend;try{adapterSend=managedAdapter?.send;}catch{throw error('adapter_invalid');}let initialProxy;try{initialProxy=configuredProxy(proxyEnv);}catch{}
   const fingerprint=p=>JSON.stringify(p?{url:p.url.href,authorization:p.authorization,noProxy:p.noProxy}:null);
-  const preflight=()=>{let configured=false;try{const s=preflightCallbackTransport({proxyEnv,managedAdapter});configured=s.proxy_configured;if(!s.ready)return s;if(managedAdapter?.send!==adapterSend)return blocked('adapter_invalid',configured);if(fingerprint(configuredProxy(proxyEnv))!==fingerprint(initialProxy))return blocked('proxy_unsupported',configured);return s;}catch{return blocked('proxy_unsupported',configured);}};
+  const preflight=()=>{let configured=false;try{const s=preflightCallbackTransport({proxyEnv,managedAdapter});configured=s.proxy_configured;if(managedAdapter?.send!==adapterSend)return blocked('adapter_invalid',configured);if(!s.ready)return s;if(fingerprint(configuredProxy(proxyEnv))!==fingerprint(initialProxy))return blocked('proxy_unsupported',configured);return s;}catch{return blocked('proxy_unsupported',configured);}};
   const send=async(raw,{method='POST',headers={},body=Buffer.alloc(0),hosts,beforeConnect,signal}={})=>{
     const url=validateCallbackUrl(raw);if(callbackPolicy==='exact-hosts'){if(!Array.isArray(hosts)||hosts.length>64||hosts.some(x=>!hostnameIsDns(x))||!hosts.includes(url.hostname))throw error('host_not_allowed');}else if(hosts!==undefined&&(!Array.isArray(hosts)||hosts.length))throw error('invalid_input');
     if(method!=='POST'||typeof beforeConnect!=='function'||(signal!==undefined&&!(signal instanceof AbortSignal)))throw error('invalid_input');const payload=bodyBytes(body,maxRequestBytes),outgoing=requestHeaders(headers,url,payload.length);const state=preflight();if(!state.ready)throw error(state.reason);const proxy=configuredProxy(proxyEnv);if(bypassMatches(proxy,url.hostname))throw error('proxy_unsupported');
@@ -120,11 +118,9 @@ export function makeCallbackTransport(options={}){
       if(!Array.isArray(result)||!result.length||result.length>32||result.some(a=>!a||typeof a!=='object'||!publicAddress(a.address)||isIP(a.address)!==a.family))throw error('blocked_address');
       if(bypassMatches(proxy,url.hostname,result.map(a=>a.address)))throw error('proxy_unsupported');
       const addresses=Object.freeze(result.map(a=>Object.freeze({address:a.address,family:a.family}))),pinned=addresses[0];
-      if(proxy){
-        const target=Object.freeze({url:url.href,hostname:url.hostname,port:443,addresses,selectedAddress:pinned,tls:Object.freeze({servername:url.hostname,rejectUnauthorized:true,minVersion:'TLSv1.2'}),destinationBinding:'delegated_unverified'});
-        const adapterRequest=Object.freeze({method:'POST',headers:Object.freeze({...outgoing}),body:Buffer.from(payload),proxy:Object.freeze({url:proxy.url.href,authorization:proxy.authorization??null}),beforeConnect:operation=>gate(operation),signal:cancellation.signal,timeoutMs,maxBytes});
-        const result=await wait(gate(()=>adapterSend.call(managedAdapter,target,adapterRequest)),'adapter_failed');await gate();active();return projectResponse(result,maxBytes);
-      }
+      // Managed egress is rejected before DNS by preflight until a concrete
+      // reviewed implementation owns the final resolution/validation/dial step.
+      // Local DNS here belongs only to the direct pinned path.
       const pinnedLookup=(host,opts,callback)=>{if(typeof opts==='function'){callback=opts;opts={};}if(typeof callback!=='function')return;if(finished||failure||signal?.aborted||host!==url.hostname){callback(error(signal?.aborted?'aborted':'connection_failed'));return;}if(opts?.all)callback(null,[{...pinned}]);else callback(null,pinned.address,pinned.family);};
       let resolveResponse;const response=new Promise(resolve=>resolveResponse=resolve);
       const receive=incoming=>{

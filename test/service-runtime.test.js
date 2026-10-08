@@ -56,7 +56,8 @@ test('formal sender factory is constructed once and shared by service preflight 
       lookup: () => assert.fail('No DNS is permitted'), request: () => assert.fail('No network is permitted') });
   } });
   const before = servicePreflight(settings, { send });
-  assert.equal(before.callback_transport.mode, 'managed');
+  assert.deepEqual(before.callback_transport, { ready: false, mode: 'blocked', reason: 'proxy_policy_unverified',
+    proxy_configured: true, destination_binding: 'unverified', network_checked: false });
   const service = await startPersistentService({}, { send, appFactory(_config, options) {
     captured = options.send;
     return { bridge: { ready: () => false, callbackTransport: () => callbackTransportStatus(options.send),

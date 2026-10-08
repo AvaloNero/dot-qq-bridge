@@ -6,8 +6,8 @@
       "package": "dot-bridge-transport",
       "file": "README.md",
       "source_sha256": "a91e9845aadff13984b0014d15f27108820954fb8d68d92ea2f79114babdb192",
-      "packaged_sha256": "c0ca3304e7449a23d9a71f2fcea07c1743226f4425a45f3ec32d6e6129447d78",
-      "adaptation": "packaged sibling-clone deployment documentation; 2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
+      "packaged_sha256": "7a073bdc7237d771cde52fe32c8a0a2936d0c44901e9dd56349f4457d262e8ab",
+      "adaptation": "Document fail-closed ordinary proxy transport and the explicit one-owner ordinary-text experiment."
     },
     {
       "package": "dot-bridge-transport",
@@ -20,37 +20,37 @@
       "package": "dot-bridge-transport",
       "file": "package.json",
       "source_sha256": "afda155fbc6a815ca415c4068290e0b0538a370eba4b412674010831efa85a0a",
-      "packaged_sha256": "afda155fbc6a815ca415c4068290e0b0538a370eba4b412674010831efa85a0a",
-      "adaptation": null
+      "packaged_sha256": "2c2aff3642a265614edc50a7931c153d81ede7c1a9516cee0a7aac3f889f25df",
+      "adaptation": "Publish only the default API and the explicit owner-message subpath with its complete native-core import closure."
     },
     {
       "package": "dot-bridge-transport",
       "file": "status.js",
       "source_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
-      "packaged_sha256": "9b85a8bf6c9c92637fe588c94234a998cd189d7b940298a2a09d3d2b8023a903",
-      "adaptation": "2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
+      "packaged_sha256": "66171ddb209937d3923e33b0fcdf4b2b3729a7c5ce7059d884981026c99e0c3f",
+      "adaptation": "Remove unverified legacy managed readiness; add truthful scoped owner_single_message_proxy with unverified destination binding."
     },
     {
       "package": "dot-bridge-transport",
       "file": "test/contract.test.js",
       "source_sha256": "5b76a3b7013d98408744617c13701ed50ee78bfa763132d09e81f33fb55c58eb",
-      "packaged_sha256": "3fbee24c2aa9674b2419ed7f4546d95adf6b4923dc6db7bc4836cf43850aa60f",
-      "adaptation": "2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
+      "packaged_sha256": "8c9139083e146c345a8a0cbcb7ec7e876a0308fcc120eabee63cf51c6b6207a4",
+      "adaptation": "Regress fail-closed legacy adapter behavior and unchanged direct pinning/limits."
     },
     {
       "package": "dot-bridge-transport",
       "file": "test/network-safety.test.js",
       "source": "dot-bridge-tunnel/temporary/synthetic-events/test/transport.test.js",
       "source_sha256": "0e18f3ff24634cb5424a28e6d7353a3bfc13224cb36b249e688df75c2758fbd9",
-      "packaged_sha256": "c8ecaa6da71ce23f639ad3bdf2977029be618ba1cf784b6abcf7175e48b1a789",
-      "adaptation": "32 shared-core regressions directly use the formal API and exact-host policy; omit 3 wrapper-only tests; add 6 offline NO_PROXY hostname/IP/CIDR matrices; implementation unchanged; 2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
+      "packaged_sha256": "bc3cac2580d370e5261182d928a6b0976204367d936a95407c701447faab2bf7",
+      "adaptation": "Preserve network safety coverage while requiring all unverified managed routes to remain blocked."
     },
     {
       "package": "dot-bridge-transport",
       "file": "transport.js",
       "source_sha256": "12c0667e38460c7ffbf6f590233ca5bbce123f6c5d10eeb0e5b646d4dfd260a8",
-      "packaged_sha256": "8b6d691d399c0c116e4b89dab0af95f9f06ca0a8f204031c23880dab9bda70a6",
-      "adaptation": "2026-10-04 cloud audit: explicit delegated_unverified status and project-owned adapter semantics"
+      "packaged_sha256": "f45307afc902ba13121ebc473c8672c5071ce665b0958c8a6c9e42f8fdcf6f72",
+      "adaptation": "Ordinary proxy callbacks remain fail-closed even with a callable legacy managed adapter."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -154,8 +154,36 @@
       "package": "dot-bridge-tunnel",
       "file": "test/sibling-contract.test.js",
       "source_sha256": "02b225bcaf3edf651794167950ce68a1f03058db3e1fded24e10de9094973a3b",
-      "packaged_sha256": "dc96b0bc20a880110207f45953492533a95bce55ac41f04fab6e54acdedcc3c3",
-      "adaptation": "existing sibling-clone resolution; use actual Windows private fixtures for sibling integration"
+      "packaged_sha256": "e6bbf0c788030f892857efde1ab75f55b94c8e2a6b3a8159b1068e2e0b3906a6",
+      "adaptation": "Use current QQ checkout and optional explicit Lark source root for isolated-worktree cross-platform contract validation."
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "candidate/node-proxy-connection.js",
+      "source_sha256": "645683c7e71e311ca8b15ad3970db50966c5c556d78f25fe9f0b493d7f77f162",
+      "packaged_sha256": "5abebaeab545621108f393b4ed3d33e9b3de9ae2c69312530a5d27472d9c407f",
+      "adaptation": "Reviewed bounded hostname CONNECT/TLS core, with temporary observation hooks removed."
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "experimental/owner-message.js",
+      "source_sha256": "cf4cea6697afdeb7f7afdf6d73005cd2a3ea89cc7a35766926c08536e13babf0",
+      "packaged_sha256": "2d4534f4576aba6b9e3fbde0825d4863334ab0800ae39576154224e8c66d67ea",
+      "adaptation": "Explicit bounded owner-message experiment with ordinary-text option; no default activation or final-IP claim."
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "test/owner-message.test.js",
+      "source_sha256": "cb9e3c1d864603fa75dea3b5827ae915e984109cbe7f91ef6090641686171638",
+      "packaged_sha256": "cb9e3c1d864603fa75dea3b5827ae915e984109cbe7f91ef6090641686171638",
+      "adaptation": "Offline owner-message budgets, identity recognition, text modes, cancellation, and aggregate projection tests."
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "test/native-proxy.test.js",
+      "source_sha256": "8c575ec1f5ab1c1e28d04950ac469e2da3ed4b908539fe3452689e4021b6361e",
+      "packaged_sha256": "0050dea9fd29519e718cfbd38e0aebb72d83d00bbfb8c51d6d377bd5138cf825",
+      "adaptation": "Offline fixed-loopback native protocol/TLS/owner-message tests; no temporary publisher or live endpoints."
     }
   ]
 }

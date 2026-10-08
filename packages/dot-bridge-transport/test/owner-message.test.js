@@ -1,0 +1,118 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {makeOwnerMessageExperimentTransport,ownerMessageExperimentStatus} from '../experimental/owner-message.js';
+import {signedHeaders,makeCallbackTransport,projectCallbackTransportStatus} from '../index.js';
+import {projectToolResult,projectLarkPreflight} from '../../dot-bridge-tunnel/src/live-contract.js';
+const url='https://callback.example.test/one-owner';
+const expectedText='owner connection test';
+const subscription='sub_'+'a'.repeat(64),eventId='evt_'+'b'.repeat(64);
+const challenge=()=>({type:'verification',challenge:'c'.repeat(43)});
+function fixture(channel='qq',extra={}){
+ const time={value:Date.now()},calls=[],env={HTTPS_PROXY:'http://proxy.example.test:3128',NO_PROXY:'127.0.0.1,10.0.0.0/8'};
+ const send=makeOwnerMessageExperimentTransport({approvedOwnerMessageExperiment:true,channel,expectedText,deadlineMs:time.value+60000,proxyEnv:env,now:()=>time.value,connect:async(u,p,r)=>{await r.beforeConnect(()=>{});const value=JSON.parse(r.body);calls.push({url:u.href,proxy:p.href,value,headers:r.headers});return {status:200,body:Buffer.from(JSON.stringify(value.type==='verification'?{challenge:value.challenge}:{}))};},...extra});
+ const event=()=>({eventId,name:`${channel}.message.created`,timestamp:new Date(time.value).toISOString(),data:{message_id:'fixture-message',conversation:'owner',text:expectedText,reply_deadline:new Date(time.value+300000).toISOString()},cursor:null});
+ return {send,calls,env,time,event};
+}
+async function waitFor(predicate){for(let i=0;i<12&&!predicate();i++)await Promise.resolve();assert.ok(predicate());}
+function request(value,extra={}){const body=Buffer.from(JSON.stringify(value));const id=value.type==='verification'?'verify_'+'d'.repeat(32):value.eventId;return {headers:signedHeaders({id:subscription,key:Buffer.alloc(32,1)},id,body,Date.now()),body,beforeConnect(){},...extra};}
+for(const channel of ['qq','lark'])test(`${channel}: exact one owner message after verified challenge; readiness remains for fixed reply`,async()=>{
+ const f=fixture(channel);assert.equal(ownerMessageExperimentStatus(f.send,f.env).mode,'owner_single_message_proxy');await f.send(url,request(challenge()));assert.equal(f.send.state().challenge_verified,true);await f.send(url,request(f.event()));assert.equal(f.send.state().event_accepted,true);assert.equal(f.send.preflight().ready,true);assert.equal(f.calls.length,2);
+ await assert.rejects(f.send(url,request(f.event())),e=>e.code==='invalid_input');await assert.rejects(f.send(url,request(challenge())),e=>e.code==='invalid_input');assert.equal(f.calls.length,2);assert.equal(f.send.state().final_address_binding,'unverified');
+});
+test('factory requires explicit approval, channel, exact text, deadline and original proxy',()=>{
+ const now=Date.now(),base={approvedOwnerMessageExperiment:true,channel:'qq',expectedText,deadlineMs:now+60000,proxyEnv:{HTTPS_PROXY:'http://proxy.example.test'},now:()=>now};
+ for(const fields of [{approvedOwnerMessageExperiment:false},{approvedOwnerMessageExperiment:'true'},{channel:'other'},{expectedText:''},{expectedText:'x'.repeat(1025)},{deadlineMs:now-1},{deadlineMs:now+900001},{proxyEnv:{}},{proxyEnv:{HTTPS_PROXY:'http://user:pass@proxy.example.test'}}])assert.throws(()=>makeOwnerMessageExperimentTransport({...base,...fields}));
+});
+test('identity recognition rejects forged readiness and mismatched proxy environment',()=>{
+ const f=fixture();assert.equal(ownerMessageExperimentStatus({preflight:()=>f.send.preflight()},f.env),null);assert.equal(ownerMessageExperimentStatus(()=>{},f.env),null);assert.equal(ownerMessageExperimentStatus(f.send,{HTTPS_PROXY:'http://another.example.test'}).ready,false);assert.throws(()=>{f.send.preflight=()=>({ready:true});});
+ delete f.env.HTTPS_PROXY;assert.equal(f.send.preflight().ready,false);
+});
+test('deadline and close revoke scope without resetting budgets',async()=>{
+ const f=fixture();await f.send(url,request(challenge()));f.time.value+=60001;assert.equal(f.send.preflight().ready,false);await assert.rejects(f.send(url,request(f.event())),e=>e.code==='aborted');assert.equal(f.calls.length,1);
+ const g=fixture();g.send.close();assert.equal(g.send.preflight().ready,false);await assert.rejects(g.send(url,request(challenge())),e=>e.code==='aborted');
+});
+test('failed or wrong-echo challenge consumes one attempt and cannot authorize an event',async()=>{
+ for(const response of [{status:503,body:Buffer.from('{}')},{status:200,body:Buffer.from('{"challenge":"wrong"}')}]){
+  let calls=0;const f=fixture('qq',{connect:async()=>{calls++;return response;}});await f.send(url,request(challenge()));assert.equal(f.send.state().challenge_verified,false);await assert.rejects(f.send(url,request(f.event())));await assert.rejects(f.send(url,request(challenge())));assert.equal(calls,1);
+ }
+});
+test('HTTP event failure cannot retry or expand allowance',async()=>{
+ const f=fixture();await f.send(url,request(challenge()));f.calls.length=0;
+ // Invalid redirects reject without making another attempt.
+ const g=fixture('qq',{connect:async(u,p,r)=>JSON.parse(r.body).type==='verification'?{status:200,body:Buffer.from(JSON.stringify({challenge:challenge().challenge}))}:{status:503,body:Buffer.from('{}')}});
+ await g.send(url,request(challenge()));assert.equal((await g.send(url,request(g.event()))).status,503);assert.equal(g.send.state().event_attempted,true);assert.equal(g.send.state().event_accepted,false);await assert.rejects(g.send(url,request(g.event())));
+});
+test('one bound complete URL and subscription; wrong owner/text/channel/extra fields rejected',async()=>{
+ const f=fixture();await f.send(url,request(challenge()));await assert.rejects(f.send(url+'/different',request(f.event())),e=>e.code==='host_not_allowed');
+ const variants=[x=>x.name='lark.message.created',x=>x.data.conversation='other',x=>x.data.text='different',x=>x.data.secret='PRIVATE_CANARY',x=>x.data.message_id='',x=>x.data.reply_deadline='invalid',x=>x.eventId='evt_short'];
+ for(const mutate of variants){const value=f.event();mutate(value);await assert.rejects(f.send(url,request(value)));}
+ const r=request(f.event());r.headers['x-mcp-subscription-id']='sub_'+'e'.repeat(64);await assert.rejects(f.send(url,r));assert.equal(f.calls.length,1);
+});
+test('real header casing works; duplicates, extra headers and noncanonical body cannot hide data',async()=>{
+ const f=fixture();const r=request(challenge());r.headers['Content-Type']=r.headers['content-type'];delete r.headers['content-type'];r.headers['X-MCP-Subscription-Id']=r.headers['x-mcp-subscription-id'];delete r.headers['x-mcp-subscription-id'];await f.send(url,r);
+ for(const mutate of [r=>r.headers.Authorization='PRIVATE_CANARY',r=>r.headers['Content-Type']='application/json',r=>r.body=Buffer.from('{"type":"verification","challenge":"PRIVATE_CANARY","challenge":"'+'c'.repeat(43)+'"}')]){const g=fixture();const value=request(challenge());mutate(value);await assert.rejects(g.send(url,value));assert.equal(g.calls.length,0);}
+});
+test('NO_PROXY hostname rejects; CIDR does not silently become direct routing',async()=>{
+ for(const value of ['callback.example.test','*','.example.test']){const f=fixture('qq',{proxyEnv:{HTTPS_PROXY:'http://proxy.example.test',NO_PROXY:value}});await assert.rejects(f.send(url,request(challenge())),e=>e.code==='proxy_unsupported');assert.equal(f.calls.length,0);}
+ const f=fixture('qq',{proxyEnv:{HTTPS_PROXY:'http://proxy.example.test:3128',NO_PROXY:'93.184.216.0/24'}});await f.send(url,request(challenge()));assert.equal(f.calls[0].proxy,'http://proxy.example.test:3128/');
+});
+test('beforeConnect authorization is awaited and failures do not perform network',async()=>{
+ const f=fixture();await assert.rejects(f.send(url,request(challenge(),{beforeConnect:async()=>{throw Error('PRIVATE_CANARY');}})),e=>e.code==='gate_failed');assert.equal(f.calls.length,0);
+ await f.send(url,request(challenge(),{beforeConnect:async()=>{}}));assert.equal(f.calls.length,1);
+});
+test('concurrent sends cannot consume a second challenge or event budget',async()=>{
+ let release;const f=fixture('qq',{connect:()=>new Promise(resolve=>{release=resolve;})});const first=f.send(url,request(challenge()));await waitFor(()=>release);await assert.rejects(f.send(url,request(challenge())),e=>e.code==='invalid_input');release({status:200,body:Buffer.from(JSON.stringify({challenge:challenge().challenge}))});await first;assert.equal(f.send.state().challenge_verified,true);
+});
+test('abort and timeout stop waits; late rejection cannot retry',async t=>{
+ const controller=new AbortController();let reject;const f=fixture('qq',{connect:()=>new Promise((_,r)=>{reject=r;})});const promise=f.send(url,request(challenge(),{signal:controller.signal}));await waitFor(()=>reject);controller.abort();await assert.rejects(promise,e=>e.code==='aborted');reject(Error('PRIVATE_CANARY'));await Promise.resolve();await assert.rejects(f.send(url,request(challenge())));
+ t.mock.timers.enable({apis:['setTimeout']});const g=fixture('qq',{connect:()=>new Promise(()=>{})});const pending=g.send(url,request(challenge()));await Promise.resolve();t.mock.timers.tick(10000);await assert.rejects(pending,e=>e.code==='timeout');
+});
+test('new status preserves unverified destination and does not alter default readiness',()=>{
+ const f=fixture(),s=f.send.preflight();assert.equal(s.ready,true);assert.equal(s.mode,'owner_single_message_proxy');assert.equal(s.destination_binding,'unverified');assert.equal(s.network_checked,false);assert.deepEqual(projectCallbackTransportStatus(s),s);
+ for(const change of [{destination_binding:'direct_pinned'},{proxy_configured:false},{reason:'proxy_policy_unverified'},{ready:false}])assert.throws(()=>projectCallbackTransportStatus({...s,...change}));
+ assert.equal(makeCallbackTransport({proxyEnv:{HTTPS_PROXY:'http://proxy.example.test'}}).preflight().ready,false);
+});
+test('aggregate QQ/Lark projections retain explicit experiment mode without fabricating delivery proof',()=>{
+ const f=fixture(),transport=f.send.preflight();
+ const qq=projectToolResult({name:'check_bridge_setup',arguments:{}},{isError:false,structuredContent:{configuration_ready:true,events_discoverable:true,missing_settings:[],callback_hostname:null,callback_policy:'not_provided',qq_api_profile:'documented',network_checked:false,next_step:'ignored',callback_transport:transport}},true);assert.equal(qq.callback_transport.mode,'owner_single_message_proxy');assert.equal(qq.callback_transport.destination_binding,'unverified');
+ const lark=projectLarkPreflight({arguments:{}},{isError:false,structuredContent:{callback_hostname:null,callback_policy:'not_provided',binding_ready:true,delivery_configured:true,network_checked:false,callback_transport:transport}});assert.equal(lark.callback_transport.mode,'owner_single_message_proxy');assert.equal(lark.end_to_end_verified,false);assert.equal(lark.ready_for_delivery,false);
+});
+
+test('initial async authorization gate is bounded by caller abort, close and deadline',async t=>{
+ for(const action of ['abort','close']){const f=fixture(),c=new AbortController();const pending=f.send(url,request(challenge(),{beforeConnect:()=>new Promise(()=>{}),signal:c.signal}));if(action==='abort')c.abort();else f.send.close();await assert.rejects(pending,e=>e.code==='aborted');assert.equal(f.calls.length,0);assert.equal(f.send.state().challenge_attempted,false);}
+ t.mock.timers.enable({apis:['setTimeout']});const f=fixture();const pending=f.send(url,request(challenge(),{beforeConnect:()=>new Promise(()=>{})}));t.mock.timers.tick(10000);await assert.rejects(pending,e=>e.code==='timeout');assert.equal(f.calls.length,0);
+});
+test('post-response async authorization gate cannot hang or report late success',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});let gates=0,release;const f=fixture();const pending=f.send(url,request(challenge(),{beforeConnect:()=>{gates++;if(gates===3)return new Promise(resolve=>{release=resolve;});}}));await waitFor(()=>release);t.mock.timers.tick(10000);await assert.rejects(pending,e=>e.code==='timeout');assert.equal(f.send.state().challenge_verified,false);assert.equal(f.calls.length,1);release();await Promise.resolve();assert.equal(f.send.state().challenge_verified,false);
+});
+
+test('microtask cancellation after an authority gate cannot open a socket or report success',async()=>{
+ for(const gateNumber of [1,3])for(const action of ['abort','close']){
+  const f=fixture(),controller=new AbortController();let gates=0;
+  const pending=f.send(url,request(challenge(),{signal:controller.signal,beforeConnect:()=>{if(++gates===gateNumber)queueMicrotask(()=>action==='abort'?controller.abort():f.send.close());}}));
+  await assert.rejects(pending,e=>e.code==='aborted');assert.equal(f.calls.length,gateNumber===1?0:1);assert.equal(f.send.state().challenge_verified,false);assert.equal(f.send.state().event_accepted,false);
+ }
+});
+
+test('any-owner-text mode accepts one ordinary text without an expected phrase and preserves its bytes',async()=>{
+ for(const text of ['你好，今天聊点什么？','自由输入，不是预设口令。\n第二行 😀','  保留本人原始空格  ','中'.repeat(2000),'😀'.repeat(1000)]){
+  const f=fixture('lark',{acceptAnyOwnerText:true,expectedText:undefined});await f.send(url,request(challenge()));const value=f.event();value.data.text=text;await f.send(url,request(value));
+  assert.equal(f.calls.at(-1).value.data.text,text);assert.equal(f.send.state().event_accepted,true);assert.equal(f.calls.length,2);
+  value.eventId='evt_'+'f'.repeat(64);value.data.message_id='another-message';value.data.text='另一条本人消息';await assert.rejects(f.send(url,request(value)));assert.equal(f.calls.length,2);
+ }
+});
+test('any-owner-text is an explicit boolean choice and supersedes a stale expected phrase',async()=>{
+ for(const acceptAnyOwnerText of ['true',1,null,{},()=>true])assert.throws(()=>fixture('lark',{acceptAnyOwnerText}),e=>e.code==='invalid_options');
+ const f=fixture('lark',{acceptAnyOwnerText:true,expectedText:'旧的指定句子'});await f.send(url,request(challenge()));const value=f.event();value.data.text='用户现在选择的自由文本';await f.send(url,request(value));assert.equal(f.calls.length,2);
+ const old=fixture('lark');await old.send(url,request(challenge()));await assert.rejects(old.send(url,request(value)),e=>e.code==='invalid_input');assert.equal(old.calls.length,1);
+});
+test('ordinary text rejects empty, nontext, control, invalid Unicode and excessive content without consuming the message',async()=>{
+ const f=fixture('lark',{acceptAnyOwnerText:true,expectedText:undefined});await f.send(url,request(challenge()));
+ for(const text of ['', ' \n\t ', null, 42, {text:'not a string'}, 'control\u0000text','invalid\ud800','x'.repeat(2001)]){const value=f.event();value.data.text=text;await assert.rejects(f.send(url,request(value)),e=>e.code==='invalid_input');}
+ assert.equal(f.calls.length,1);assert.equal(f.send.state().event_attempted,false);const value=f.event();value.data.text='有效的本人文字';await f.send(url,request(value));assert.equal(f.calls.length,2);
+});
+test('any-owner-text does not relax channel, owner marker, body shape, URL or subscription binding',async()=>{
+ const f=fixture('lark',{acceptAnyOwnerText:true,expectedText:undefined});await f.send(url,request(challenge()));
+ for(const mutate of [v=>v.name='qq.message.created',v=>v.data.conversation='other',v=>v.data.secret='PRIVATE_CANARY',v=>v.extra='PRIVATE_CANARY']){const value=f.event();value.data.text='自由的本人文字';mutate(value);await assert.rejects(f.send(url,request(value)));}
+ const value=f.event();value.data.text='自由的本人文字';await assert.rejects(f.send(url+'/changed',request(value)),e=>e.code==='host_not_allowed');const r=request(value);r.headers['x-mcp-subscription-id']='sub_'+'f'.repeat(64);await assert.rejects(f.send(url,r));assert.equal(f.calls.length,1);
+});

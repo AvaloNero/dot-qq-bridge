@@ -5,7 +5,7 @@
 ## 三条严格分开的网络路径
 
 1. 固定平台请求：只有可信源码调用点显式传入 purpose: provider 才启用现有 HTTPS_PROXY/https_proxy。仍须同时匹配代码固定官方域名和调用点 hosts 白名单。api.bot.qq.com、api.sgroup.qq.com、sandbox.api.sgroup.qq.com、bots.qq.com。保留原主机名 TLS 验证，不跟随重定向，限制时限/响应体（平台 HTTP 默认 30 秒；回调仍默认 10 秒），并在连接前复核撤销条件。
-2. MCP Events 回调：真实订阅 challenge 和队列 event 两个源码调用点都显式传入 purpose: callback，分派到本仓库 `packages/dot-bridge-transport` 的共享回调传输。它使用自己的精确域名、DNS/IP/TLS 与代理契约检查，不能借用固定 QQ 平台代理通道。已有 managed proxy 却没有注入项目 callback adapter 时，在 DNS/请求前明确拒绝，不能绕开环境代理偷偷直连。`managedAdapter` 是项目自己的 DI 接口，不是需要等待发布的官方同名组件。
+2. MCP Events 回调：真实订阅 challenge 和队列 event 两个源码调用点都显式传入 purpose: callback，分派到本仓库 `packages/dot-bridge-transport` 的共享回调传输。它使用自己的精确域名、DNS/IP/TLS 与代理契约检查，不能借用固定 QQ 平台代理通道。默认共享路径识别到已有 managed proxy 时，在 DNS/请求前明确拒绝；注入任意 `managedAdapter` / `managedCallbackAdapter` 也不会解锁或调用 adapter，不能绕开环境代理偷偷直连。`managedAdapter` 是项目自己的 DI 兼容接口，不是需要等待发布的官方同名组件。
 3. OAuth/JWKS 与原 Sites 路径：继续原有调用目的、DNS/IP 校验和连接方式，本次不扩展其代理信任或鉴权范围。
 
 平台代理负责解析固定的官方服务主机。这是受限、明确的信任边界变化，不声称与任意回调的 IP 固定等价；它依赖云环境已有、可信且获准的代理。代理可能观察连接元数据，若环境终止 TLS，也可观察流量；没有额外启用 TLS 拦截或关闭证书校验。
@@ -29,15 +29,16 @@ callback 生产调用点已接到共享接口，不代表此云环境的 managed
 
 ## Callback 状态与离线验收
 
-`check_bridge_setup`、service preflight 和 service status 使用同一闭合对象 `callback_transport`，只含 `ready`、`mode`、`reason`、`proxy_configured`、`destination_binding`、`network_checked:false`。缺 adapter 的已有 managed proxy 报 `blocked/proxy_policy_unverified`；裸 custom send 或畸形状态报 `blocked/transport_unverified`。配置层 `ready:true` 仍不是网络验收。CLI 可以保留本地诊断监听，但不依赖旧持久订阅绕过此门禁。
+`check_bridge_setup`、service preflight 和 service status 使用同一闭合对象 `callback_transport`，只含 `ready`、`mode`、`reason`、`proxy_configured`、`destination_binding`、`network_checked:false`。默认路径的已有 managed proxy 无论是否注入合规形状的 adapter，均报 `blocked/proxy_policy_unverified`；裸 custom send、旧 `managed/delegated_unverified` 或畸形状态报 `blocked/transport_unverified`。配置层 `ready:true` 仍不是网络验收。CLI 可以保留本地诊断监听，但不依赖旧持久订阅绕过此门禁。
 
 必须区分以下证据：
 
 - `pending_callback_policy` 表示项目未配置 callback 域名白名单；QQ 的展示顺序可能先显示它，同时 transport 仍为 blocked。
-- `proxy_policy_unverified` 表示代码识别了代理配置但没有 adapter，在 DNS/HTTP 前主动拒绝。它既不是代理拒绝记录，也不能证明云产品不支持 callback。
+- `proxy_policy_unverified` 表示代码识别了代理配置，但尚无经过评审、将最终公网校验与实际拨号绑定的通用实现，在 DNS/HTTP 前主动拒绝。任意可调用的 adapter 不提供这项保证。它既不是代理拒绝记录，也不能证明云产品不支持 callback。
 - `proxy_unsupported` 也可能来自配置解析、NO_PROXY 或已选路由变化，是本地拒绝分类。
 - `dns_failed`、`tls_failed`、`connection_failed` 只有与一次实际发送结果关联时才是该请求的网络证据。历史 provider 日志属于另一条发送路径。
-- 注入 adapter 后的 `managed/delegated_unverified/network_checked:false` 只说明项目把传输交给了该代码，不证明代理最终目的地址或环境政策已验证。合成 adapter 与 `verified:true` 均不能提供这种证明。
+- `managed/delegated_unverified` 已从状态契约移除，不能通过注入 adapter 或伪造旧状态声称就绪。合成 adapter 与 `verified:true` 均不能证明代理最终目的地址或环境政策已验证。
+- 单独显式导入的 `experimental/owner-message.js` 仅服务于已获授权的单条 owner 消息实验。活跃状态是 `owner_single_message_proxy/unverified/network_checked:false`；最多 15 分钟、一个绑定 callback/订阅、一次 challenge 尝试及一次 owner event 尝试，不重试。订阅鉴权与 owner/provider 身份校验仍由上游负责。默认 requester 和 service launcher 不选择它；该状态不证明代理最终地址绑定，也不解锁通用 managed 路径。
 
 ## 2026-10-04 原生云环境的无网络检查
 
@@ -65,6 +66,6 @@ IP CONNECT 在客户端代码上可构造，但当前没有证据说明本执行
 
 callback 错误统一用 MCP `-32015` 与共享固定 reason code；原始异常、cause、代理认证、完整 callback URL 和消息内容不会进入错误对象。队列仍独立处理 408/429/5xx 的有界重试和 410 退订，共享传输不擅自重试。callback HTTP 默认最多 10 秒；请求体和响应体各最多 256 KiB；HTTP header 仍为 8 KiB。平台请求的原时限和其它网络路径未随此修改。
 
-纯离线接线验收覆盖：真实 `createApp` 的签名 challenge 和 event 队列进入共享 managed fake adapter、2000 字中文正文、429 后相同事件重试、410 停止订阅、缺 adapter 时零 DNS/零 HTTP 创建、持久订阅重启时 Gateway 保持关闭、短 TTL 到期前连接门禁及错误脱敏。所有 DNS/adapter 都是合成注入；这不证明实际云代理或当前 dot 回调已经可用。
+纯离线接线验收覆盖：真实 `createApp` 的签名 challenge 和 event 队列进入共享 direct-pinned 路径的 DNS/HTTP 测试替身、2000 字中文正文、429 后相同事件重试、410 停止订阅、有无注入 managed adapter 时均零 DNS/零 HTTP 创建/零 adapter 调用、持久订阅重启时 Gateway 保持关闭、短 TTL 到期前连接门禁及错误脱敏。DNS/HTTP 均为合成注入；这不证明实际云代理或当前 dot 回调已经可用。
 
 参考：https://nodejs.org/download/release/latest-v24.x/docs/api/http.html#built-in-proxy-support

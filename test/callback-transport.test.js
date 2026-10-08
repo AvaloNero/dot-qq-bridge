@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { createApp } from '../src/server.js';
 import { makePublicRequester } from '../src/network.js';
 import { config, mcpHeaders, mcpRequest, qqPayload, subscriptionParams } from './helpers.js';
 import { preflightCallbackTransport } from '../packages/dot-bridge-transport/index.js';
+import { verifyWebhook } from '../src/signatures.js';
 
 async function appFixture(t, send) {
   let now = Date.parse('2026-10-03T12:00:00Z');
@@ -81,32 +83,67 @@ test('bare custom send reports unverified transport and cannot imply callback re
   assert.equal((await f.post('events/subscribe', subscriptionParams())).body.error.code, -32015);
 });
 
-test('real app uses shared managed adapter for signed challenge and queued event, preserving retry and 410 semantics', async t => {
+test('managed adapter injections cannot unblock app subscription or send before DNS and network', async t => {
+  for (const name of ['managedAdapter', 'managedCallbackAdapter']) {
+    const calls = { dns: 0, requests: 0, provider: 0, adapter: 0, gates: 0 };
+    const forbidden = key => () => { calls[key]++; assert.fail(`${key} must not run`); };
+    const send = makePublicRequester({ proxyEnv: { HTTPS_PROXY: 'http://synthetic-proxy.invalid:3128' },
+      lookup: forbidden('dns'), request: forbidden('requests'), providerSend: forbidden('provider'),
+      [name]: { send: forbidden('adapter') } });
+    const f = await appFixture(t, send);
+    const setup = (await f.post('tools/call', { name: 'check_bridge_setup', arguments: {} })).body.result.structuredContent;
+    assert.deepEqual(setup.callback_transport, { ready: false, mode: 'blocked', reason: 'proxy_policy_unverified',
+      proxy_configured: true, destination_binding: 'unverified', network_checked: false });
+    assert.equal(setup.configuration_ready, false); assert.equal(f.app.bridge.ready(), false);
+    const denied = await f.post('events/subscribe', subscriptionParams());
+    assert.equal(denied.body.error.code, -32015); assert.equal(denied.body.error.data.reason, 'proxy_policy_unverified');
+    assert.equal(f.app.bridge.store.activeSubscription(f.now), undefined);
+    await assert.rejects(send(subscriptionParams().delivery.url, { purpose: 'callback', hosts: ['receiver.example.com'],
+      body: Buffer.from('{}'), beforeConnect: forbidden('gates') }),
+      error => error.code === -32015 && error.data.reason === 'proxy_policy_unverified');
+    assert.deepEqual(calls, { dns: 0, requests: 0, provider: 0, adapter: 0, gates: 0 });
+  }
+});
+
+test('real app uses shared direct-pinned transport for signed challenge and queued event, preserving retry and 410 semantics', async t => {
   const calls = []; let dns = 0, eventStatus = 429;
-  const send = makePublicRequester({ proxyEnv: { HTTPS_PROXY: 'http://synthetic-user:synthetic-password@managed.invalid:3128' },
+  let f;
+  const send = makePublicRequester({ proxyEnv: {},
     lookup: async host => { dns++; assert.equal(host, 'receiver.example.com'); return [{ address: '8.8.8.8', family: 4 }]; },
-    request: () => assert.fail('direct request forbidden'), providerSend: () => assert.fail('provider forbidden'),
-    managedCallbackAdapter: { send: async (target, request) => {
-      await request.beforeConnect(); assert.equal(request.signal.aborted, false);
-      assert.equal(target.hostname, 'receiver.example.com'); assert.equal(target.selectedAddress.address, '8.8.8.8');
-      assert.equal(target.tls.servername, target.hostname); assert.equal(target.tls.rejectUnauthorized, true);
-      assert.equal(target.destinationBinding, 'delegated_unverified'); assert.equal(Object.isFrozen(target), true);
-      assert.equal(request.headers.host, target.hostname); assert.equal(request.headers['proxy-authorization'], undefined);
-      const body = JSON.parse(request.body); calls.push(body);
-      return { status: body.type === 'verification' ? 200 : eventStatus, headers: { 'content-type': 'application/json' },
-        body: Buffer.from(body.type === 'verification' ? JSON.stringify({ challenge: body.challenge }) : '{}') };
-    } } });
-  const f = await appFixture(t, send);
+    providerSend: () => assert.fail('provider forbidden'),
+    request: (target, options, receive) => {
+      assert.equal(target.hostname, 'receiver.example.com'); assert.equal(options.agent, false);
+      assert.equal(options.servername, target.hostname); assert.equal(options.rejectUnauthorized, true);
+      assert.equal(options.autoSelectFamily, false); assert.equal(options.family, 4);
+      assert.equal(options.headers.host, target.hostname); assert.equal(options.headers['proxy-authorization'], undefined);
+      options.lookup(target.hostname, { all: true }, (error, answers) => {
+        assert.equal(error, null); assert.deepEqual(answers, [{ address: '8.8.8.8', family: 4 }]);
+      });
+      const req = new EventEmitter();
+      req.destroy = () => { if (!req.closed) { req.closed = true; queueMicrotask(() => req.emit('close')); } };
+      req.end = payload => queueMicrotask(() => {
+        assert.equal(verifyWebhook(subscriptionParams().delivery.secret, options.headers, payload, f.now), true);
+        const body = JSON.parse(payload); calls.push(body);
+        const res = new EventEmitter(); res.statusCode = body.type === 'verification' ? 200 : eventStatus;
+        res.headers = { 'content-type': 'application/json' }; res.rawHeaders = Object.entries(res.headers).flat(); res.complete = false;
+        res.destroy = () => { if (!res.closed) { res.closed = true; queueMicrotask(() => res.emit('close')); } };
+        receive(res); if (res.closed) return;
+        res.emit('data', Buffer.from(body.type === 'verification' ? JSON.stringify({ challenge: body.challenge }) : '{}'));
+        res.complete = true; res.emit('end'); res.destroy(); req.destroy();
+      });
+      return req;
+    } });
+  f = await appFixture(t, send);
   assert.equal((await f.post('events/subscribe', subscriptionParams())).status, 200);
-  const longText = '\u4e2d'.repeat(2000); f.app.bridge.acceptQq(qqPayload(f.now, { content: longText }), 'synthetic-managed');
+  const longText = '\u4e2d'.repeat(2000); f.app.bridge.acceptQq(qqPayload(f.now, { content: longText }), 'synthetic-direct');
   await f.app.bridge.tick(); assert.equal(f.app.bridge.store.get("SELECT state FROM jobs WHERE kind='event'").state, 'pending');
   f.advance(1001); eventStatus = 202; await f.app.bridge.tick();
   assert.equal(f.app.bridge.store.get("SELECT state FROM jobs WHERE kind='event'").state, 'delivered');
   assert.equal(calls.length, 3); assert.deepEqual(calls[1], calls[2]); assert.equal(calls[1].data.text, longText); assert.equal(dns, 3);
   const setup = (await f.post('tools/call', { name: 'check_bridge_setup', arguments: {} })).body.result.structuredContent;
-  assert.deepEqual(setup.callback_transport, { ready: true, mode: 'managed', reason: 'none', proxy_configured: true, destination_binding: 'delegated_unverified', network_checked: false });
+  assert.deepEqual(setup.callback_transport, { ready: true, mode: 'direct', reason: 'none', proxy_configured: false, destination_binding: 'direct_pinned', network_checked: false });
   const next = qqPayload(f.now + 1001, { id: 'second-message', content: 'second synthetic message' }); next.id = 'second-source-event';
-  f.app.bridge.acceptQq(next, 'synthetic-managed-next'); eventStatus = 410; await f.app.bridge.tick();
+  f.app.bridge.acceptQq(next, 'synthetic-direct-next'); eventStatus = 410; await f.app.bridge.tick();
   assert.equal(f.app.bridge.store.activeSubscription(f.now + 1001), undefined);
   assert.equal(f.app.bridge.store.get("SELECT state FROM jobs WHERE message_id='second-message'").state, 'dead');
 });

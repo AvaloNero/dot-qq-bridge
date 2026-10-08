@@ -5,11 +5,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createApp } from '../src/server.js';
 import { OWNER, VERSION, SERVICE_HEADER, metadata } from '../src/common.js';
 // QQ contains this package; Lark is a sibling clone of the QQ repository.
-const sibling = name => new URL(`../../../../${name}/src/`, import.meta.url);
+const sibling = name => name === 'dot-qq-bridge' ? new URL('../../../src/', import.meta.url)
+  : process.env.LARK_BRIDGE_SOURCE_ROOT ? pathToFileURL(path.resolve(process.env.LARK_BRIDGE_SOURCE_ROOT) + path.sep)
+  : new URL('../../../../dot-lark-bridge/src/', import.meta.url);
 const qqSource = new URL('server.js', sibling('dot-qq-bridge'));
 const larkSource = new URL('server.js', sibling('dot-lark-bridge'));
 const available = fs.existsSync(qqSource) && fs.existsSync(larkSource);

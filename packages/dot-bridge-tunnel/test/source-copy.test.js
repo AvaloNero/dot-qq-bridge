@@ -8,26 +8,31 @@ import { createHash } from 'node:crypto';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'source-copies.json'), 'utf8'));
 const adaptations = new Set([
-  'dot-bridge-transport/README.md',
-  'dot-bridge-transport/status.js',
-  'dot-bridge-transport/transport.js',
-  'dot-bridge-transport/test/contract.test.js',
-  'dot-bridge-transport/test/network-safety.test.js',
-  'dot-bridge-tunnel/README.md',
-  'dot-bridge-tunnel/src/auth.js',
-  'dot-bridge-tunnel/src/main.js',
-  'dot-bridge-tunnel/test/aggregator.test.js',
-  'dot-bridge-tunnel/test/live.test.js',
-  'dot-bridge-tunnel/test/sibling-contract.test.js'
+  "dot-bridge-transport/README.md",
+  "dot-bridge-transport/candidate/node-proxy-connection.js",
+  "dot-bridge-transport/experimental/owner-message.js",
+  "dot-bridge-transport/package.json",
+  "dot-bridge-transport/status.js",
+  "dot-bridge-transport/test/contract.test.js",
+  "dot-bridge-transport/test/native-proxy.test.js",
+  "dot-bridge-transport/test/network-safety.test.js",
+  "dot-bridge-transport/test/owner-message.test.js",
+  "dot-bridge-transport/transport.js",
+  "dot-bridge-tunnel/README.md",
+  "dot-bridge-tunnel/src/auth.js",
+  "dot-bridge-tunnel/src/main.js",
+  "dot-bridge-tunnel/test/aggregator.test.js",
+  "dot-bridge-tunnel/test/live.test.js",
+  "dot-bridge-tunnel/test/sibling-contract.test.js"
 ]);
 
 test('packaged sources match reviewed hashes and declare layout, Windows and transport adaptations', () => {
   assert.equal(manifest.version, 1);
-  assert.equal(manifest.files.length, 22);
+  assert.equal(manifest.files.length, 26);
   const seen = new Set();
   for (const item of manifest.files) {
     assert.ok(['dot-bridge-transport', 'dot-bridge-tunnel'].includes(item.package));
-    assert.match(item.file, /^(?:src\/|test\/)?[a-z0-9.-]+$/i);
+    assert.match(item.file, /^(?:(?:src|test|candidate|experimental)\/)?[a-z0-9.-]+$/i);
     assert.ok(!item.file.includes('..'));
     const name = `${item.package}/${item.file}`;
     assert.ok(!seen.has(name)); seen.add(name);

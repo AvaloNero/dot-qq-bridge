@@ -9,6 +9,8 @@ import {
   makeCallbackTransport, CallbackTransportError, preflightCallbackTransport,
 } from '../index.js';
 
+import {configuredProxy,bypassMatches} from '../transport.js';
+
 const URL = 'https://callbacks.example.test/events?fixture=synthetic';
 const KEY = Buffer.alloc(32, 0x5a); // fixed test bytes, never a runtime credential
 const BODY = Buffer.from('{"synthetic":true}');
@@ -432,54 +434,19 @@ test('configured proxies construct blocked and refuse sending before fake DNS or
   }
 });
 
-test('managed routing requires a code-injected adapter and delegates immutable vetted target evidence', async () => {
-  const managedCalls = [];
-  const managedAdapter = { async send(target, request) {
-    managedCalls.push({ target, request });
-    return request.beforeConnect(() => ({ status: 200, headers: { 'content-type': 'application/json', 'content-length': '11' }, body: Buffer.from('{"ok":true}') }));
-  } };
-  const f = fixture({ proxyEnv: { HTTPS_PROXY: 'http://fixture-user:fixture-secret@proxy.example.test:3128' }, managedAdapter });
-  assert.deepEqual(f.send.preflight(), {
-    ready: true, mode: 'managed', reason: 'none', proxy_configured: true,
-    destination_binding: 'delegated_unverified', network_checked: false,
-  });
-  const result = await f.run();
-  assert.equal(result.status, 200);
-  assert.equal(f.calls.dns.length, 1);
-  assert.equal(f.calls.requests.length, 0);
-  assert.equal(managedCalls.length, 1);
-  const { target, request } = managedCalls[0];
-  assert.equal(target.url, URL);
-  assert.equal(target.hostname, 'callbacks.example.test');
-  assert.equal(target.port, 443);
-  assert.deepEqual(target.addresses, [{ address: '93.184.216.34', family: 4 }]);
-  assert.deepEqual(target.selectedAddress, target.addresses[0]);
-  assert.deepEqual(target.tls, { servername: 'callbacks.example.test', rejectUnauthorized: true, minVersion: 'TLSv1.2' });
-  assert.equal(target.destinationBinding, 'delegated_unverified');
-  for (const item of [target, target.addresses, ...target.addresses, target.selectedAddress, target.tls]) assert.equal(Object.isFrozen(item), true);
-  assert.equal(request.method, 'POST');
-  assert.deepEqual(request.body, BODY);
-  assert.equal(request.headers['webhook-signature'], HEADERS['webhook-signature']);
-  assert.equal(request.headers.authorization, undefined);
-  assert.equal(request.headers['proxy-authorization'], undefined);
-  assert.doesNotMatch(JSON.stringify(target), /fixture-user|fixture-secret/);
-  assert.doesNotMatch(JSON.stringify(result), /fixture-user|fixture-secret|proxy\.example/);
+test('managed injection stays blocked and never transmits target or proxy credentials', async () => {
+  let adapterCalls=0;
+  const f=fixture({proxyEnv:{HTTPS_PROXY:'http://fixture-user:fixture-secret@proxy.example.test:3128'},managedAdapter:{send:async()=>{adapterCalls++;return {status:200,headers:{},body:Buffer.from('{}')};}}});
+  assert.deepEqual(f.send.preflight(),{ready:false,mode:'blocked',reason:'proxy_policy_unverified',proxy_configured:true,destination_binding:'unverified',network_checked:false});
+  await rejectsCode(f.run(),'proxy_policy_unverified');
+  assert.equal(f.calls.dns.length,0);assert.equal(f.calls.requests.length,0);assert.equal(adapterCalls,0);
+  assert.doesNotMatch(JSON.stringify(f.send.preflight()),/fixture-user|fixture-secret|proxy\.example/);
 });
 
-test('managed adapter failure and non-public DNS never fall back to direct routing', async () => {
-  for (const answers of [[{ address: '127.0.0.1', family: 4 }], [{ address: '93.184.216.34', family: 4 }]]) {
-    let invoked = 0;
-    const f = fixture({ answers, proxyEnv: { HTTPS_PROXY: 'http://proxy.example.test:3128' }, managedAdapter: {
-      async send() { invoked++; throw new Error('PRIVATE_CALLBACK PRIVATE_SECRET'); },
-    } });
-    await assert.rejects(f.run(), error => {
-      assert.ok(error instanceof CallbackTransportError);
-      assert.equal(error.cause, undefined);
-      assert.doesNotMatch(String(error), /PRIVATE_/);
-      return true;
-    });
-    assert.equal(invoked, answers[0].address === '127.0.0.1' ? 0 : 1);
-    assert.equal(f.calls.requests.length, 0);
+test('neither public nor private local DNS answers can make an unverified proxy usable', async () => {
+  for(const answers of [[{address:'127.0.0.1',family:4}],[{address:'93.184.216.34',family:4}]]){
+    let invoked=0;const f=fixture({answers,proxyEnv:{HTTPS_PROXY:'http://proxy.example.test:3128'},managedAdapter:{async send(){invoked++;throw Error('PRIVATE_SECRET');}}});
+    await rejectsCode(f.run(),'proxy_policy_unverified');assert.equal(invoked,0);assert.equal(f.calls.dns.length,0);assert.equal(f.calls.requests.length,0);
   }
 });
 
@@ -548,30 +515,32 @@ function proxyFixture(rule, answers, env = {}) {
 test('NO_PROXY exact host, suffix and wildcard matches deny before DNS without direct fallback', async () => {
   for (const rule of ['callbacks.example.test', 'CALLBACKS.EXAMPLE.TEST:443', '.example.test', '*.example.test', '*']) {
     const f = proxyFixture(rule);
-    await rejectsCode(f.run(), 'proxy_unsupported');
+    assert.equal(bypassMatches(configuredProxy({HTTPS_PROXY:'http://proxy.example.test',no_proxy:rule}),'callbacks.example.test'),true);
+    await rejectsCode(f.run(), 'proxy_policy_unverified');
     assert.equal(f.calls.dns.length, 0);
     assert.equal(f.calls.requests.length, 0);
     assert.equal(f.delegated(), 0);
   }
   for (const rule of ['example.test', '.other.example.test', 'notcallbacks.example.test']) {
     const f = proxyFixture(rule);
-    await f.run();
-    assert.equal(f.calls.dns.length, 1);
-    assert.equal(f.delegated(), 1);
+    assert.equal(bypassMatches(configuredProxy({HTTPS_PROXY:'http://proxy.example.test',no_proxy:rule}),'callbacks.example.test'),false);
+    await rejectsCode(f.run(),'proxy_policy_unverified');
+    assert.equal(f.calls.dns.length, 0);
+    assert.equal(f.delegated(), 0);
     assert.equal(f.calls.requests.length, 0);
   }
 });
 
 test('NO_PROXY lower-first selection ignores an invalid unselected value but rejects an invalid selected value', async () => {
   const f = proxyFixture('10.0.0.0/8', undefined, { NO_PROXY: 'invalid/unused' });
-  await f.run(); assert.equal(f.delegated(), 1);
+  await rejectsCode(f.run(),'proxy_policy_unverified'); assert.equal(f.delegated(), 0);
   const invalid = proxyFixture('bad/24', undefined, { NO_PROXY: '10.0.0.0/8' });
   assert.equal(invalid.send.preflight().reason, 'proxy_unsupported');
   await rejectsCode(invalid.run(), 'proxy_unsupported');
   assert.equal(invalid.calls.dns.length, 0); assert.equal(invalid.delegated(), 0);
   for (const lower of [undefined, '']) {
     const fallback = proxyFixture(lower, undefined, { NO_PROXY: 'callbacks.example.test' });
-    await rejectsCode(fallback.run(), 'proxy_unsupported');
+    await rejectsCode(fallback.run(), 'proxy_policy_unverified');
     assert.equal(fallback.calls.dns.length, 0); assert.equal(fallback.delegated(), 0);
   }
 });
@@ -591,9 +560,10 @@ test('NO_PROXY IPv4 CIDR zero/full prefixes, host bits and subnet boundaries are
   ];
   for (const [rule, address, denied] of cases) {
     const f = proxyFixture(rule, [{ address, family: 4 }]);
-    if (denied) await rejectsCode(f.run(), 'proxy_unsupported'); else await f.run();
-    assert.equal(f.calls.dns.length, 1, rule);
-    assert.equal(f.delegated(), denied ? 0 : 1, rule);
+    assert.equal(bypassMatches(configuredProxy({HTTPS_PROXY:'http://proxy.example.test',no_proxy:rule}),'callbacks.example.test',[address]),denied,rule);
+    await rejectsCode(f.run(),'proxy_policy_unverified');
+    assert.equal(f.calls.dns.length, 0, rule);
+    assert.equal(f.delegated(), 0, rule);
     assert.equal(f.calls.requests.length, 0, rule);
   }
 });
@@ -611,9 +581,10 @@ test('NO_PROXY IPv6 CIDR zero/full prefixes and non-byte-aligned boundaries pres
   ];
   for (const [rule, address, denied] of cases) {
     const f = proxyFixture(rule, [{ address, family: 6 }]);
-    if (denied) await rejectsCode(f.run(), 'proxy_unsupported'); else await f.run();
-    assert.equal(f.calls.dns.length, 1, rule);
-    assert.equal(f.delegated(), denied ? 0 : 1, rule);
+    assert.equal(bypassMatches(configuredProxy({HTTPS_PROXY:'http://proxy.example.test',no_proxy:rule}),'callbacks.example.test',[address]),denied,rule);
+    await rejectsCode(f.run(),'proxy_policy_unverified');
+    assert.equal(f.calls.dns.length, 0, rule);
+    assert.equal(f.delegated(), 0, rule);
     assert.equal(f.calls.requests.length, 0, rule);
   }
 });
@@ -622,8 +593,9 @@ test('NO_PROXY checks every vetted address, including an unselected IPv4 or IPv6
   const answers = [{ address: '93.184.216.34', family: 4 }, { address: '1.1.1.1', family: 4 }, { address: '2606:4700:4700::1111', family: 6 }];
   for (const rule of ['1.1.1.1', '1.1.1.0/24', '2606:4700::/32', '[2606:4700:4700::1111]:443', '2606:4700:4700::1111']) {
     const f = proxyFixture(rule, answers);
-    await rejectsCode(f.run(), 'proxy_unsupported');
-    assert.equal(f.calls.dns.length, 1);
+    assert.equal(bypassMatches(configuredProxy({HTTPS_PROXY:'http://proxy.example.test',no_proxy:rule}),'callbacks.example.test',answers.map(a=>a.address)),true);
+    await rejectsCode(f.run(), 'proxy_policy_unverified');
+    assert.equal(f.calls.dns.length, 0);
     assert.equal(f.delegated(), 0);
     assert.equal(f.calls.requests.length, 0);
   }

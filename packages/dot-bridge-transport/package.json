@@ -3,8 +3,22 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "exports": "./index.js",
-  "files": ["index.js", "status.js", "transport.js", "README.md"],
-  "engines": {"node": ">=22"},
-  "scripts": {"test": "node --test"}
+  "exports": {
+    ".": "./index.js",
+    "./owner-message-experiment": "./experimental/owner-message.js"
+  },
+  "files": [
+    "index.js",
+    "status.js",
+    "transport.js",
+    "README.md",
+    "experimental/owner-message.js",
+    "candidate/node-proxy-connection.js"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
 }
