@@ -3,6 +3,7 @@ import https from 'node:https';
 import { BridgeError } from './common.js';
 import { createProviderProxyAgent } from './provider-network.js';
 import { inspectQrCredentials } from './connection-wizard.js';
+import { qrFailure } from './qr-failures.js';
 
 export const QR_REVIEW = 'Official npm 1.2.0 README public startQrConnect integration; no SDK redistribution or reimplementation';
 export function officialQrUrl(raw) {
@@ -62,41 +63,47 @@ export function scanOfficialBot(startQrConnect, { approved = false, expectedAppI
   if (approved !== true || scannerIsOwner !== true || !/^[a-zA-Z0-9_-]{1,128}$/.test(expectedAppId ?? '') ||
       typeof displayQr !== 'function' || typeof startQrConnect !== 'function' ||
       !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > QR_LOCAL_WAIT_MS) {
-    return Promise.reject(new BridgeError('Explicit scan consent, existing bot AppID and scanner-owner confirmation are required'));
+    return Promise.reject(qrFailure('Explicit scan consent, existing bot AppID and scanner-owner confirmation are required', 'invalid_configuration'));
   }
   return new Promise((resolve, reject) => {
     let stop, done = false;
     const deadlineEpochMs = Date.now() + timeoutMs;
     const controller = new AbortController();
-    const finish = (error, candidate) => {
+    const finish = (error, candidate, failureReason) => {
       if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort', cancel);
       controller.abort(); try { stop?.(); } catch { /* never emit SDK errors */ }
-      error ? reject(new BridgeError(error)) : resolve(candidate);
+      error ? reject(qrFailure(error, failureReason)) : resolve(candidate);
     };
-    const cancel = () => finish('Official scan cancelled');
-    const timer = setTimeout(() => finish('Official scan expired'), timeoutMs);
+    const cancel = () => finish('Official scan cancelled', null, 'cancelled');
+    const timer = setTimeout(() => finish('Official scan expired', null, 'local_deadline_reached'), timeoutMs);
     if (signal?.aborted) { cancel(); return; }
     signal?.addEventListener('abort', cancel, { once: true });
     try {
       stop = startQrConnect({
-        onQrDisplayed(raw) { if (!done) { try { displayQr(officialQrUrl(raw)); } catch { finish('Official QR display rejected'); } } },
-        onQrExpired() { finish('Official QR expired; explicit restart required'); },
-        onFailure() { finish('Official scan failed'); },
+        onQrDisplayed(raw) { if (!done) { try { displayQr(officialQrUrl(raw)); } catch { finish('Official QR display rejected', null, 'qr_display_rejected'); } } },
+        onQrExpired() { finish('Official QR expired; explicit restart required', null, 'official_qr_expired'); },
+        onFailure() { finish('Official scan failed', null, 'sdk_reported_failure'); },
         onSuccess(credentials) {
           queueMicrotask(() => {
             if (done) return;
-            if (Date.now() >= deadlineEpochMs) { finish('Official scan expired'); return; }
+            if (Date.now() >= deadlineEpochMs) { finish('Official scan expired', null, 'local_deadline_reached'); return; }
             try {
-              if (!Array.isArray(credentials) || credentials.length !== 1 || credentials[0]?.appId !== expectedAppId) throw new Error();
+              const rejectScope = reason => finish('Returned bot or scanner-owner identity did not match the approved scope', null, reason);
+              if (!Array.isArray(credentials) || credentials.length !== 1) { rejectScope('result_count_rejected'); return; }
+              if (!credentials[0] || typeof credentials[0].appId !== 'string') { rejectScope('credential_result_invalid'); return; }
+              if (credentials[0].appId !== expectedAppId) { rejectScope('expected_app_mismatch'); return; }
+              const owner = credentials[0].userOpenid;
+              if (owner === undefined || owner === null || owner === '') { rejectScope('owner_identity_missing'); return; }
+              if (typeof owner !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(owner)) { rejectScope('owner_identity_invalid'); return; }
               const candidate = inspectQrCredentials(credentials, { appId: expectedAppId,
                 confirmedOwnerOpenid: credentials[0].userOpenid, ownerEvidence: 'official-qr-response' });
               finish(null, candidate);
-            } catch { finish('Returned bot or scanner-owner identity did not match the approved scope'); }
+            } catch { finish('Returned bot or scanner-owner identity did not match the approved scope', null, 'credential_result_invalid'); }
           });
         }
       }, { displayQrCodeToConsole: false, source: '', signal: controller.signal });
       if (typeof stop !== 'function') throw new Error();
       if (done) stop();
-    } catch { finish('Official scanner could not start'); }
+    } catch { finish('Official scanner could not start', null, 'sdk_start_failed'); }
   });
 }

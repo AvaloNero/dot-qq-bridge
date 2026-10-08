@@ -1,5 +1,6 @@
 import { QR_PARENT_MAX_MS, QR_REQUEST_BUDGET } from './qr-limits.js';
 import { officialQrUrl } from './official-qr.js';
+import { sanitizeQrFailureReason } from './qr-failures.js';
 export function qrChildEnvironment(env) {
   const allowed = new Set(['PATH', 'HOME', 'TMPDIR', 'LANG', 'HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR']);
   return Object.fromEntries(Object.entries(env).filter(([key]) => allowed.has(key)));
@@ -20,6 +21,7 @@ export function superviseQrChild(child, { output, failed = () => {}, signal, tim
     } else if (event?.type === 'result') {
       const safe = { status: event.status === 'official_scan_validated' ? 'official_scan_validated' : 'scan_failed_or_scope_rejected',
         credentials_written: allowCredentialsWritten === true && event.credentials_written === true, current_dot_connected: false, owner_identity_verified: event.owner_identity_verified === true };
+      if (safe.status !== 'official_scan_validated') safe.failure_reason = sanitizeQrFailureReason(event.failure_reason);
       if (event.diagnostic) safe.provider_discovery_passed = event.diagnostic.status === 'provider_discovery_passed';
       output(safe); if (safe.status !== 'official_scan_validated') failed(); finish();
     } else failure();

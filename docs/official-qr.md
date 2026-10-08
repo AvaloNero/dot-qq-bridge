@@ -116,3 +116,29 @@ checked again when accepting a successful result and before saving credentials,
 so a suspended process cannot save a late response before an overdue timer runs.
 An outer supervisor must allow the local waiting window plus cleanup, and must
 not label that window as server-side validity.
+
+## Fixed failure classifications
+
+Failed scanner results include a sanitized `failure_reason`. Only the SDK's
+explicit `onQrExpired` callback produces `official_qr_expired`; elapsed time, an
+HTTP 200, or text in an SDK error does not establish official expiry. Local timer
+or write-before-deadline checks instead produce `local_deadline_reached`.
+
+Other values identify the branch actually reached: `invalid_configuration`,
+`cancelled`, `sdk_reported_failure`, `qr_display_rejected`,
+`result_count_rejected`, `expected_app_mismatch`, `owner_identity_missing`,
+`owner_identity_invalid`, `credential_result_invalid`, `sdk_start_failed`,
+`setup_failed`, `credential_save_failed`, or `provider_probe_failed`.
+Unrecognized or absent reasons become `unknown_failure`. An owner is classified
+as missing or syntactically invalid only from the returned result; the integration
+does not invent an independently known owner to compare against.
+
+The scanner attaches classifications internally and the parent rechecks the
+fixed allowlist. Neither error messages, credentials, identities, SDK bodies nor
+task keys are forwarded. These categories do not diagnose the underlying cause
+of an SDK or network failure and do not trigger a retry or a new QR task.
+
+Failure classification does not prove that the credential destination is empty.
+For example, persistence may have partially completed before an I/O error, or an
+optional probe may fail after saving. Check private file metadata separately;
+never print credential contents to diagnose a failure.
