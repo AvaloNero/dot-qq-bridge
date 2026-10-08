@@ -98,3 +98,21 @@ The isolated transport now emits allowlisted stage/method/sequence/phase/HTTP
 status/elapsed-time/error-code diagnostics only. Parent IPC revalidates and drops
 unrecognized fields; it never prints raw errors, response bodies, request bodies,
 query strings or credentials. This instrumentation does not alter networking.
+
+## Local waiting limits
+
+The scanner waits locally for at most 600 seconds. This is a client-side waiting
+limit, not a claim about the official QQ QR lifetime. An official expiry signal
+still ends the attempt immediately; generating another QR requires an explicit
+restart. The worker has 15 seconds of cleanup allowance, and the parent adds a
+further 5 seconds. An explicitly approved provider check has its separate
+60-second budget.
+
+Each QR request has an outer 30-second total bound, using the existing proxy
+and TLS settings. This does not override the SDK or proxy timeout: either may
+fail earlier, including at the SDK's 10-second limit. Cancellation terminates
+outstanding requests. A wall-clock cutoff is
+checked again when accepting a successful result and before saving credentials,
+so a suspended process cannot save a late response before an overdue timer runs.
+An outer supervisor must allow the local waiting window plus cleanup, and must
+not label that window as server-side validity.

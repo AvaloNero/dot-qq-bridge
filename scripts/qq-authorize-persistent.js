@@ -4,7 +4,7 @@ import { qrChildEnvironment, superviseQrChild } from '../src/qr-child-boundary.j
 const required = '--confirm-official-scan --confirm-scanner-is-owner --confirm-save-qq-credentials';
 if (process.argv.slice(2).join(' ') !== required) {
   console.log(JSON.stringify({ mode: 'QQ_PERSISTENT_AUTHORIZATION_PLAN', scan_started: false, credentials_written: false,
-    required_settings: ['QQ_APP_ID', 'QQ_CREDENTIAL_DIRECTORY'], destination_template: '${QQ_CREDENTIAL_DIRECTORY}/credentials.json', profile: 'tencent-sdk',
+    required_settings: ['QQ_APP_ID', 'QQ_CREDENTIAL_DIRECTORY'], destination_template: '${QQ_CREDENTIAL_DIRECTORY}/credentials.json', profile: 'tencent-sdk', local_wait_seconds: 600, official_qr_expiry: 'unknown',
     required_arguments: required, service_started: false }));
 } else {
   let child;

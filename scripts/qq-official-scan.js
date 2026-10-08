@@ -1,3 +1,4 @@
+import { QR_PARENT_MAX_MS, QR_PROBE_MAX_MS } from '../src/qr-limits.js';
 import { fork } from 'node:child_process';
 import { qrChildEnvironment, superviseQrChild } from '../src/qr-child-boundary.js';
 const args = process.argv.slice(2);
@@ -27,7 +28,7 @@ if (!args.length || args.join(' ') === '--plan') {
     child = fork(new URL('./qq-scan-worker.js', import.meta.url), [], { env, execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     const controller = new AbortController();
     process.once('SIGINT', () => controller.abort()); process.once('SIGTERM', () => controller.abort());
-    superviseQrChild(child, { output: value => console.log(JSON.stringify(value)),
+    superviseQrChild(child, { timeoutMs: QR_PARENT_MAX_MS + (seen.has('--confirm-provider-check') ? QR_PROBE_MAX_MS : 0), output: value => console.log(JSON.stringify(value)),
       failed: () => { process.exitCode = 1; }, signal: controller.signal });
     child.send({ approved: true, scannerIsOwner: true, expectedAppId: values.get('--expected-app-id'),
       probeApproved: seen.has('--confirm-provider-check'), profile: values.get('--profile') });

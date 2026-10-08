@@ -1,3 +1,4 @@
+import { QR_LOCAL_WAIT_MS, QR_WORKER_MAX_MS, QR_PROBE_MAX_MS } from '../src/qr-limits.js';
 // Isolated one-shot SDK runtime. No .env loading or secret IPC. Persistence
 // requires the explicit persistent-parent mode and its approved private path.
 import { prepareCredentialDestination, saveQqCredentials } from '../src/credential-store.js';
@@ -9,18 +10,23 @@ process.once('message', async config => {
   if (started) return; started = true;
   let restore, candidate;
   const controller = new AbortController();
+  const authorizationDeadlineEpochMs = Date.now() + QR_LOCAL_WAIT_MS;
   process.once('disconnect', () => controller.abort());
-  const timer = setTimeout(() => process.exit(1), 185000);
+  const timer = setTimeout(() => process.exit(1), QR_WORKER_MAX_MS + (config.probeApproved === true ? QR_PROBE_MAX_MS : 0));
   try {
     if (config?.approved !== true || config.scannerIsOwner !== true) throw new Error();
     if (config.persistCredentials === true) prepareCredentialDestination(config.credentialDirectory);
-    restore = installQrTransport({ diagnostic: emit });
+    restore = installQrTransport({ diagnostic: emit, signal: controller.signal });
     const { startQrConnect } = await import('@tencent-connect/qqbot-connector');
     candidate = await scanOfficialBot(startQrConnect, { ...config, signal: controller.signal,
       displayQr: url => emit({ type: 'qr', url }) });
     restore(); restore = null;
     let saved = false;
-    if (config.persistCredentials === true) { saveQqCredentials(candidate, { directory: config.credentialDirectory, expectedAppId: config.expectedAppId, profile: config.profile }); saved = true; }
+    if (config.persistCredentials === true) {
+      // A resumed process must not persist a result after its wall-clock deadline.
+      if (controller.signal.aborted || Date.now() >= authorizationDeadlineEpochMs) throw new Error();
+      saveQqCredentials(candidate, { directory: config.credentialDirectory, expectedAppId: config.expectedAppId, profile: config.profile }); saved = true;
+    }
     let diagnostic;
     if (config.probeApproved === true) {
       if (!['tencent-sdk', 'tencent-sandbox', 'documented'].includes(config.profile)) throw new Error();

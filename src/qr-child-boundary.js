@@ -1,9 +1,10 @@
+import { QR_PARENT_MAX_MS, QR_REQUEST_BUDGET } from './qr-limits.js';
 import { officialQrUrl } from './official-qr.js';
 export function qrChildEnvironment(env) {
   const allowed = new Set(['PATH', 'HOME', 'TMPDIR', 'LANG', 'HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR']);
   return Object.fromEntries(Object.entries(env).filter(([key]) => allowed.has(key)));
 }
-export function superviseQrChild(child, { output, failed = () => {}, signal, timeoutMs = 190000, allowCredentialsWritten = false } = {}) {
+export function superviseQrChild(child, { output, failed = () => {}, signal, timeoutMs = QR_PARENT_MAX_MS, allowCredentialsWritten = false } = {}) {
   let terminal = false;
   const finish = () => { terminal = true; clearTimeout(timer); signal?.removeEventListener('abort', failure); child.kill(); };
   const failure = () => { if (terminal) return; output({ status: 'scanner_process_failed' }); failed(); finish(); };
@@ -30,9 +31,9 @@ export function superviseQrChild(child, { output, failed = () => {}, signal, tim
 
 export function sanitizeQrDiagnostic(event) {
   if (!['create', 'poll'].includes(event?.stage) || event.method !== 'POST' ||
-      !Number.isInteger(event.sequence) || event.sequence < 1 || event.sequence > 65 ||
+      !Number.isInteger(event.sequence) || event.sequence < 1 || event.sequence > QR_REQUEST_BUDGET ||
       !['start', 'response', 'error', 'timeout'].includes(event.phase) ||
-      !Number.isInteger(event.elapsed_ms) || event.elapsed_ms < 0 || event.elapsed_ms > 190000 ||
+      !Number.isInteger(event.elapsed_ms) || event.elapsed_ms < 0 || event.elapsed_ms > QR_PARENT_MAX_MS ||
       !(event.status === null || (Number.isInteger(event.status) && event.status >= 100 && event.status <= 599)) ||
       ![null, 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENETUNREACH', 'EAI_AGAIN', 'ENOTFOUND',
         'ERR_TLS_CERT_ALTNAME_INVALID', 'ERR_NETWORK_ACCESS_DENIED', 'OTHER'].includes(event.code)) return null;

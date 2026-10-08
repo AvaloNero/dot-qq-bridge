@@ -21,6 +21,20 @@ test('unsafe destination and mismatched scope refuse before credential write', t
   privateMkdirSync(path.join(base,'open'),{mode:0o755});assert.throws(()=>prepareCredentialDestination(path.join(base,'open')));
   assert.throws(()=>saveQqCredentials(candidate,{directory:path.join(base,'qq'),expectedAppId:'other',profile:'tencent-sdk'}));assert.equal(fs.existsSync(path.join(base,'qq')),false);
 });
+test('superseded empty destination is blocked atomically without credential fallback', t => {
+  const base = privateMkdtempSync(path.join(os.tmpdir(), 'superseded-credential-fixture-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const file = prepareCredentialDestination(base);
+  privateMkdirSync(file, { mode: 0o700 });
+  assert.throws(() => prepareCredentialDestination(base));
+  assert.throws(() => saveQqCredentials(candidate, { directory: base, expectedAppId: 'fixture', profile: 'tencent-sdk' }));
+  // Even a legacy writer already past its prepare check cannot win O_EXCL.
+  assert.throws(() => fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600));
+  assert.deepEqual(fs.readdirSync(base), ['credentials.json']);
+  assert.equal(fs.lstatSync(file).isDirectory(), true);
+  assert.deepEqual(fs.readdirSync(file), []);
+  assertPrivateFixture(assert, file, 0o700);
+});
 test('persistent authorization requires explicit deployment settings and its default plan reveals no selected identity or path', () => {
   const env = { QQ_APP_ID: 'synthetic-selected-app', QQ_CREDENTIAL_DIRECTORY: '/synthetic-selected-private-path' };
   const plan = spawnSync(process.execPath, ['scripts/qq-authorize-persistent.js'], { env, encoding: 'utf8' });
