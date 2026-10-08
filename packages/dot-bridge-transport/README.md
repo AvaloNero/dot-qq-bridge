@@ -93,6 +93,25 @@ Neither mode replenishes its one-event budget.
 The 10-second per-request deadline covers initial/final asynchronous authorization
 as well as transport. Cancellation is rechecked after awaited races.
 
+A trusted persistence owner may construct waitForOwner mode with restoredState
+containing exactly url, subscription_id, valid_until, challenge_verified,
+event_attempted, event_accepted and closed. This is a code-only import of an
+already successful subscription; challenge_verified must be true. The factory
+performs no storage or network I/O and does not prove checkpoint authenticity,
+callback ownership, or final destination IP. The caller must decrypt and validate
+its stored checkpoint against the same owner/app scope before constructing it.
+The signing secret and message body are not inputs to this transport checkpoint.
+
+Restoration consumes the challenge budget and preserves the original complete
+URL, subscription ID, absolute expiry and event-attempt budget. valid_until must
+be the persisted earlier subscription/message deadline, never a new duration
+computed at restart. An attempted event with no accepted acknowledgement restores
+closed; an accepted event cannot be resent or renewed. The persistence owner must
+also retain the provider reply-attempt budget and close sent, uncertain or revoked
+scopes. Only expired waiting scopes with no attempted event may authenticate and
+renew. Before any callback or provider attempt, the session must durably record
+that attempt; a crash or write failure must never restore a spent budget.
+
 ownerMessageExperimentStatus(sender, proxyEnv) recognizes only this factory's
 instances. Unknown or forged functions return null; proxy changes or scope expiry
 block recognized instances. The optional connect/now hooks are trusted offline

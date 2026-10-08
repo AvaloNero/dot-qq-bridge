@@ -220,3 +220,40 @@ test('owner lifecycle status distinguishes awaiting subscription, expiry and clo
  }
  assert.equal(makeCallbackTransport({proxyEnv:f.env}).preflight().reason,'proxy_policy_unverified');
 });
+
+
+function checkpoint(validUntil,extra={}){return{url,subscription_id:subscription,valid_until:validUntil,challenge_verified:true,event_attempted:false,event_accepted:false,closed:false,...extra};}
+test('restored verified subscription performs no challenge or construction I/O and retains the exact event binding',async()=>{
+ const saved=checkpoint(Date.now()+60000),f=fixture('lark',{waitForOwner:true,deadlineMs:undefined,restoredState:saved});
+ assert.equal(f.calls.length,0);assert.equal(f.send.preflight().ready,true);assert.equal(f.send.state().challenge_attempted,true);assert.equal(f.send.state().challenge_verified,true);
+ // Import copies primitive state; changing the caller object cannot rebind it.
+ saved.url=url+'/other';saved.subscription_id='sub_'+'f'.repeat(64);saved.valid_until=1;saved.closed=true;
+ await assert.rejects(f.send(url,request(challenge())),e=>e.code==='invalid_input');
+ await assert.rejects(f.send(url+'/other',request(f.event())),e=>e.code==='host_not_allowed');
+ const wrong=request(f.event());wrong.headers['x-mcp-subscription-id']='sub_'+'f'.repeat(64);await assert.rejects(f.send(url,wrong),e=>e.code==='invalid_input');
+ await f.send(url,request(f.event()));assert.equal(f.calls.length,1);assert.equal(f.send.state().event_accepted,true);
+ await assert.rejects(f.send(url,request(f.event())),e=>e.code==='invalid_input');assert.equal(f.calls.length,1);
+});
+test('restored event and reply outcomes never replenish callback or renewal budgets',async()=>{
+ for(const state of [{event_attempted:true,event_accepted:false},{event_attempted:true,event_accepted:true},{event_attempted:true,event_accepted:true,closed:true},{closed:true}]){
+  const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined,restoredState:checkpoint(Date.now()+60000,state)});
+  const closed=state.closed===true||(state.event_attempted&&!state.event_accepted);
+  assert.equal(f.send.state().closed,!!closed);assert.equal(f.send.preflight().ready,!closed);
+  await assert.rejects(f.send(url,request(f.event())));await assert.rejects(f.send(url,request(challenge())));
+  assert.throws(()=>f.send.renewLease(f.time.value+3600000));assert.equal(f.calls.length,0);
+  f.send.close();assert.equal(f.send.preflight().reason,'scope_closed');
+ }
+});
+test('expired restored waiting remains blocked until authenticated renewal and cannot repeat verification',async()=>{
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined,restoredState:checkpoint(Date.now()-1000)});
+ assert.equal(f.send.preflight().reason,'scope_expired');await assert.rejects(f.send(url,request(f.event())),e=>e.code==='aborted');
+ f.send.renewLease(f.time.value+60000);assert.equal(f.send.preflight().ready,true);
+ await assert.rejects(f.send(url,request(challenge())));await f.send(url,request(f.event()));assert.equal(f.calls.length,1);
+});
+test('restore refuses malformed, unverified, contradictory or extra checkpoint state before any connection',()=>{
+ const saved=checkpoint(Date.now()+60000),base={waitForOwner:true,deadlineMs:undefined};
+ for(const change of [{challenge_verified:false},{challenge_verified:'true'},{event_attempted:'false'},{event_accepted:true},{closed:'false'},{valid_until:NaN},{valid_until:0},{subscription_id:'sub_short'},{url:'http://127.0.0.1/'},{secret:'synthetic-private'},{body:'synthetic-private'}])assert.throws(()=>fixture('lark',{...base,restoredState:{...saved,...change}}));
+ for(const key of Object.keys(saved)){const missing={...saved};delete missing[key];assert.throws(()=>fixture('lark',{...base,restoredState:missing}));}
+ assert.throws(()=>fixture('lark',{restoredState:saved}));
+ assert.throws(()=>fixture('lark',{...base,restoredState:saved,proxyEnv:{HTTPS_PROXY:'http://proxy.example.test',NO_PROXY:'callback.example.test'}}),e=>e.code==='proxy_unsupported');
+});

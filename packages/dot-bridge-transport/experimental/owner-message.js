@@ -19,7 +19,7 @@ const activeStatus=()=>projectCallbackTransportStatus({ready:true,mode:'owner_si
 export function ownerMessageExperimentStatus(sender,proxyEnv){
  const entry=entries.get(sender);return entry?entry.status(proxyEnv):null;
 }
-export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperiment=false,channel,expectedText,acceptAnyOwnerText=false,waitForOwner=false,deadlineMs,proxyEnv=process.env,connect,now=Date.now}={}){
+export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperiment=false,channel,expectedText,acceptAnyOwnerText=false,waitForOwner=false,deadlineMs,restoredState,proxyEnv=process.env,connect,now=Date.now}={}){
  if(approvedOwnerMessageExperiment!==true||!['qq','lark'].includes(channel)||typeof acceptAnyOwnerText!=='boolean'||typeof waitForOwner!=='boolean'||(!acceptAnyOwnerText&&(typeof expectedText!=='string'||!expectedText.trim()||Buffer.byteLength(expectedText)>1024||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(expectedText)))||typeof now!=='function'||(connect!==undefined&&typeof connect!=='function'))throw fail('invalid_options');
  const started=now(),monoStarted=performance.now();
  if(!Number.isSafeInteger(started)||(waitForOwner?deadlineMs!==undefined:(!Number.isSafeInteger(deadlineMs)||deadlineMs<=started||deadlineMs-started>900000)))throw fail('invalid_options');
@@ -28,6 +28,17 @@ export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperim
  const initial=fingerprint(originalProxy),scopeController=new AbortController();
  const connection=connect??makeNodeProxyConnection();
  let closed=false,busy=false,bound=null,boundSubscription=null,challengeAttempted=false,challengeVerified=false,eventAttempted=false,eventAccepted=false;
+ // Trusted caller-owned persistence only. This imports an already verified
+ // grant; it neither reads storage nor proves the provenance of that grant.
+ if(restoredState!==undefined){
+  if(!waitForOwner||!exact(restoredState,['url','subscription_id','valid_until','challenge_verified','event_attempted','event_accepted','closed'])||restoredState.challenge_verified!==true||typeof restoredState.subscription_id!=='string'||!/^sub_[a-f0-9]{64}$/.test(restoredState.subscription_id)||!Number.isSafeInteger(restoredState.valid_until)||restoredState.valid_until<=0||!Number.isSafeInteger(restoredState.valid_until-started)||typeof restoredState.event_attempted!=='boolean'||typeof restoredState.event_accepted!=='boolean'||typeof restoredState.closed!=='boolean'||(restoredState.event_accepted&&!restoredState.event_attempted))throw fail('invalid_options');
+  const restoredUrl=validateCallbackUrl(restoredState.url);
+  if(bypassMatches(originalProxy,restoredUrl.hostname))throw fail('proxy_unsupported');
+  bound=restoredUrl.href;boundSubscription=restoredState.subscription_id;effectiveDeadline=restoredState.valid_until;
+  challengeAttempted=true;challengeVerified=true;eventAttempted=restoredState.event_attempted;eventAccepted=restoredState.event_accepted;
+  closed=restoredState.closed||(eventAttempted&&!eventAccepted);if(closed)scopeController.abort();
+ }
+
  const remainingMs=()=>{const time=now();return effectiveDeadline===null||!Number.isSafeInteger(time)||time<started?-1:Math.min(effectiveDeadline-time,effectiveDeadline-started-(performance.now()-monoStarted));};
  const expired=()=>effectiveDeadline!==null&&remainingMs()<=0;
  // The authenticated session owns renewal authority. This method does not
