@@ -146,7 +146,7 @@ class LiveStackTests(unittest.TestCase):
                 invalid={**blocked,key:value}
                 result=stack.project_provider_event(channel,{**event,'callback_transport':invalid})
                 self.assertNotIn('callback_transport',result)
-        for mode,binding,proxy in [('direct','direct_pinned',False),('owner_single_message_proxy','unverified',True)]:
+        for mode,binding,proxy in [('direct','direct_pinned',False),('owner_single_message_proxy','unverified',True),('owner_scoped_proxy','unverified',True)]:
             value={'ready':True,'mode':mode,'reason':'none','proxy_configured':proxy,'destination_binding':binding,'network_checked':False}
             self.assertEqual(stack.project_callback_transport(value),value)
         self.assertIsNone(stack.project_callback_transport({'ready':True,'mode':'managed','reason':'none','proxy_configured':True,'destination_binding':'delegated_unverified','network_checked':False}))

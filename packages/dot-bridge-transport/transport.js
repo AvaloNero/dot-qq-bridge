@@ -6,7 +6,7 @@ import {isIP} from 'node:net';
 import {createHmac} from 'node:crypto';
 import {projectCallbackTransportStatus} from './status.js';
 const MAX_BYTES=8192,MAX_BODY_BYTES=262144;
-export const TRANSPORT_ERROR_CODES=Object.freeze(['invalid_url','host_not_allowed','invalid_key','invalid_input','invalid_options','blocked_address','dns_failed','gate_failed','aborted','timeout','connection_failed','tls_failed','invalid_response','response_too_large','redirect_rejected','status_rejected','proxy_unsupported','proxy_policy_unverified','adapter_invalid','adapter_failed']);
+export const TRANSPORT_ERROR_CODES=Object.freeze(['invalid_url','host_not_allowed','invalid_key','invalid_input','invalid_options','blocked_address','dns_failed','gate_failed','aborted','timeout','connection_failed','tls_failed','invalid_response','response_too_large','redirect_rejected','status_rejected','proxy_unsupported','proxy_policy_unverified','adapter_invalid','adapter_failed','request_busy','event_replayed','capacity_exceeded','delivery_uncertain']);
 export class CallbackTransportError extends Error {
   constructor(code){super('Callback transport rejected or failed');this.name='CallbackTransportError';this.code=TRANSPORT_ERROR_CODES.includes(code)?code:'connection_failed';this.reason=this.code;}
 }

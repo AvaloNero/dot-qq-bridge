@@ -15,6 +15,7 @@ existing sibling-checkout layout. Do not fork a second implementation.
 
 - @dot-bridge/callback-transport: ordinary factory, status schema and signature helpers
 - @dot-bridge/callback-transport/owner-message-experiment: explicitly bounded owner experiment
+- @dot-bridge/callback-transport/owner-scoped-proxy: explicit continuous owner policy
 
 The tested integration uses Node 24.15–24.x. The shared ordinary transport needs
 Node 22 or newer; native proxy/owner integration is tested on Node 24.19.0.
@@ -118,11 +119,50 @@ block recognized instances. The optional connect/now hooks are trusted offline
 test seams, not environment-selected modules. A real launcher uses the native core
 and trusted clock. Factory identity alone does not attest a supplied test hook.
 
+## Continuous owner-scoped proxy policy
+
+makeOwnerScopedProxyTransport({channel,proxyEnv}) uses the same native forced
+CONNECT/TLS implementation. The formal launcher selects this fixed module only
+for an explicitly configured owner-scoped mode; it does not change the ordinary
+factory or turn the single-message experiment into an unlimited sender.
+
+Each beforeConnect authorization gate must return exactly principal, url,
+subscription_id, expires and verified. The principal must be the configured
+Tunnel owner, the complete URL and ID must match this request, and the lease
+must remain current. Events require verified:true from the existing authenticated
+subscription Store. A challenge may use verified:false while that same owner
+subscription is being verified. The sender rechecks the gate before connection
+operations and after the response. The caller must enforce the stored owner,
+active subscription, epoch/generation, job lease and immutable message deadline.
+The snapshot is a trusted code contract, not authentication by itself; neither
+it nor successful TLS proves the callback belongs to a platform or has a public
+final destination IP. That residual policy remains explicit at activation.
+
+The sender accepts multiple distinct owner events with one callback in flight.
+It records event IDs before beginning the connection and refuses repeat attempts.
+An event attempted without a usable acknowledgement yields delivery_uncertain;
+redirects and non-success responses never trigger a fallback or automatic retry.
+HTTP 410 is returned to the existing bridge so it can revoke the subscription.
+request_busy and capacity_exceeded are explicit pre-attempt refusals that may be
+rescheduled locally. The cache is bounded by maxTrackedEvents (default 10000),
+retains IDs until their original reply deadline and rejects expired payloads.
+The existing durable Store must prevent replay after restart, keep message
+metadata immutable, and mark interrupted processing events uncertain in this
+mode. It owns rate, queue and persistence policies; there is no second outbox.
+
+owner_scoped_proxy readiness means the selected transport dependency is available;
+active subscription and provider readiness remain separate bridge status fields.
+It always reports destination_binding:unverified and network_checked:false.
+No helper reads files, configures credentials, logs bodies, starts a service or
+asserts production final-IP safety. The native proxy/TLS core and ten-second total
+request deadline remain shared with the already tested connection path.
+
 ## Truthful status
 
 The closed six-field schema keeps ready, mode, reason, proxy_configured,
 destination_binding and network_checked. Ordinary modes are direct or blocked.
-The separate owner_single_message_proxy mode is ready only for its bounded scope,
+The separate owner_single_message_proxy and owner_scoped_proxy modes expose only
+their selected policy scope,
 with destination_binding:unverified and network_checked:false. It does not claim
 production final-IP safety, real delivery, provider readiness or a current-dot wake.
 

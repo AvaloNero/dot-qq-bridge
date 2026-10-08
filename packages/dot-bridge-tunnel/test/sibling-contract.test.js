@@ -140,3 +140,39 @@ for(const replyOutcome of ['sent','uncertain'])test(`actual owner Lark delayed r
   const replyStarted=Date.now();const reply=await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply});assert.ok(Date.now()-replyStarted>=3300);assert.equal(reply.status,200);assert.equal(reply.body.result.structuredContent.status,replyOutcome);assert.equal(replies,1);
   assert.notEqual((await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply})).status,200);assert.equal(replies,1);assert.equal(callbacks,2);
 });
+
+test('actual formal Lark Bridge supports two owner events and normal queued replies through aggregate metadata', {skip:!available}, async t=>{
+ const dir=privateMkdtempSync(path.join(os.tmpdir(),'aggregate-formal-owner-'));fixtureChmodSync(dir,0o700);cleanupPrivateFixture(t,dir);
+ const keys=[121,122,123,124].map(value=>Buffer.alloc(32,value).toString('base64url'));
+ const files=keys.map((value,i)=>{const file=path.join(dir,`key-${i}`);fs.writeFileSync(file,value,{mode:0o600});return file;});
+ const credentials={version:1,status:'paired',appId:'cli_0123456789abcdef',appSecret:'synthetic-formal-secret',tenantKey:'tenant',ownerOpenId:'owner',ownerChatId:'chat'};
+ const paired=path.join(dir,'paired.json');fs.writeFileSync(paired,JSON.stringify(credentials),{mode:0o600});
+ const {createApp:createQq}=await import(qqSource),{readConfig:readQq}=await import(new URL('config.js',sibling('dot-qq-bridge')));
+ const {createApp:createLark}=await import(larkSource),{readConfig:readLark}=await import(new URL('config.js',sibling('dot-lark-bridge')));
+ const {makePublicRequester}=await import(new URL('network.js',sibling('dot-lark-bridge'))),{createLarkDispatcher}=await import(new URL('lark-runtime.js',sibling('dot-lark-bridge')));
+ const {makeOwnerScopedProxyTransport}=await import('../../dot-bridge-transport/owner-scoped.js');
+ const env={AUTH_MODE:'tunnel-service',BRIDGE_MODE:'tunnel',TUNNEL_SERVICE_OWNER_ID:OWNER};
+ const qq=createQq({...readQq({...env,TUNNEL_SERVICE_KEY_FILE:files[1],QQ_TRANSPORT:'disabled'}),dbPath:':memory:',storageKey:Buffer.alloc(32,125).toString('base64')},{worker:false,send:async()=>{throw Error('No QQ provider call');}});beforeFixtureCleanup(t,()=>qq.close());const qa=await qq.listen(0);
+ const config=readLark({...env,TUNNEL_SERVICE_OPERATION:'live',CALLBACK_TRANSPORT_MODE:'owner-scoped-proxy',TUNNEL_SERVICE_KEY_FILE:files[2],LARK_CREDENTIALS_FILE:paired,LARK_EXPECTED_APP_ID:credentials.appId,STORAGE_KEY_FILE:files[3],DATABASE_PATH:path.join(dir,'messages.sqlite'),BRIDGE_LOCK_DIRECTORY:dir,LARK_TRANSPORT:'long-connection',TEXT_RETENTION_SECONDS:'3600'});
+ const proxyEnv={HTTPS_PROXY:'http://proxy.example.test:8080'},events=[],replies=[];let challenges=0,gatewayStarts=0;
+ const transport=makeOwnerScopedProxyTransport({channel:'lark',proxyEnv,connect:async(_u,_p,r)=>{await r.beforeConnect();const body=JSON.parse(r.body);if(body.type==='verification'){challenges++;return{status:200,body:Buffer.from(JSON.stringify({challenge:body.challenge}))};}events.push(body);return{status:202,body:Buffer.from('{}')};}});
+ const send=makePublicRequester({proxyEnv,callbackTransport:transport,providerSend:async(url,options)=>{options.beforeConnect();if(url.endsWith('/tenant_access_token/internal'))return{status:200,body:Buffer.from(JSON.stringify({code:0,tenant_access_token:'synthetic-token',expire:7200}))};const body=JSON.parse(options.body);replies.push({url,text:JSON.parse(body.content).text});return{status:200,body:Buffer.from(JSON.stringify({code:0,data:{message_id:`reply-${replies.length}`,chat_id:'chat'}}))};}});
+ class Dispatcher{register(){return this;}async invoke(){}}
+ class WS{async start(){gatewayStarts++;throw Error('Fixture forbids live Gateway startup');}close(){}}
+ const sdk={EventDispatcher:Dispatcher,WSClient:WS,LoggerLevel:{warn:1},Domain:{Feishu:'feishu'}};
+ const lark=createLark(config,{approvedLive:true,worker:false,send,sdk});beforeFixtureCleanup(t,async()=>{await lark.close();transport.close();});const la=await lark.listen(0);
+ const app=createApp({host:'127.0.0.1',port:8789,owner:OWNER,ingressKeyFile:files[0],qqKeyFile:files[1],larkKeyFile:files[2],qqPort:qa.port,larkPort:la.port,operation:'live',liveChannels:['lark']},{approvedLive:true});beforeFixtureCleanup(t,()=>app.close());const address=await app.listen(0);
+ const post=(method,params={},key=keys[0])=>new Promise((resolve,reject)=>{const req=http.request({host:'127.0.0.1',port:address.port,path:'/mcp',method:'POST',agent:false,headers:{[SERVICE_HEADER]:key,'content-type':'application/json',accept:'application/json, text/event-stream','mcp-method':method,'mcp-protocol-version':VERSION,...(method==='tools/call'?{'mcp-name':params.name}:{})}},res=>{const chunks=[];res.on('data',x=>chunks.push(x));res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(Buffer.concat(chunks))}));});req.on('error',reject);req.end(JSON.stringify({jsonrpc:'2.0',id:1,method,params:{...params,_meta:metadata()}}));});
+ const call=(name,args={},key)=>post('tools/call',{name,arguments:args},key);
+ assert.equal((await post('tools/list')).status,200);const setup=await call('check_lark_readiness');assert.equal(setup.status,200);assert.deepEqual(setup.body.result.structuredContent.pending_messages,[]);assert.equal(challenges,0);
+ const subscribe=await post('events/subscribe',{name:'lark.message.created',arguments:{conversation:'owner'},delivery:{mode:'webhook',url:'https://callback.example.test/formal-owner',secret:'whsec_'+Buffer.alloc(32,126).toString('base64')},ttlMs:60000});assert.equal(subscribe.status,200);
+ const dispatcher=createLarkDispatcher(config,lark.bridge.store,Date.now);
+ for(const [id,text]of [['message-one','第一条正常文字'],['message-two','第二条独立文字']]){const now=Date.now();const envelope={schema:'2.0',header:{event_id:`source-${id}`,event_type:'im.message.receive_v1',create_time:String(now),app_id:credentials.appId,tenant_key:'tenant'},event:{sender:{sender_id:{open_id:'owner'},sender_type:'user',tenant_key:'tenant'},message:{message_id:id,chat_id:'chat',chat_type:'p2p',message_type:'text',create_time:String(now),content:JSON.stringify({text})}}};assert.equal((await dispatcher.invoke(envelope,{needCheck:false})).outcome,'queued');assert.equal((await dispatcher.invoke(envelope,{needCheck:false})).outcome,'duplicate');}
+ await lark.bridge.tick();await lark.bridge.tick();assert.equal(events.length,2);assert.equal(challenges,1);
+ const pending=await call('check_lark_readiness');assert.equal(pending.status,200);const data=pending.body.result.structuredContent;
+ assert.deepEqual(data.pending_messages.map(x=>x.message_id),['message-one','message-two']);assert.equal(data.callback_transport.mode,'owner_scoped_proxy');assert.equal(data.callback_transport.destination_binding,'unverified');assert.equal(data.end_to_end_verified,false);
+ for(const privateValue of ['第一条','第二条','synthetic-formal-secret','formal-owner'])assert.equal(JSON.stringify(pending.body).includes(privateValue),false);
+ assert.equal((await call('check_lark_readiness',{},keys[1])).status,401);
+ for(const [id,text]of [['message-one','第一条独立回答'],['message-two','第二条另一个回答']]){const queued=await call('reply_to_lark',{message_id:id,text});assert.equal(queued.status,200);assert.equal(queued.body.result.structuredContent.status,'pending');await lark.bridge.tick();const read=await call('get_lark_message',{message_id:id});assert.equal(read.body.result.structuredContent.reply.status,'sent');const again=await call('reply_to_lark',{message_id:id,text});assert.equal(again.body.result.structuredContent.status,'sent');}
+ assert.deepEqual(replies.map(x=>x.text),['第一条独立回答','第二条另一个回答']);assert.deepEqual((await call('check_lark_readiness')).body.result.structuredContent.pending_messages,[]);assert.equal(events.length,2);assert.equal(gatewayStarts,0);
+});

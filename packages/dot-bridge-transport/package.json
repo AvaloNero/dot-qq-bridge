@@ -5,7 +5,8 @@
   "private": true,
   "exports": {
     ".": "./index.js",
-    "./owner-message-experiment": "./experimental/owner-message.js"
+    "./owner-message-experiment": "./experimental/owner-message.js",
+    "./owner-scoped-proxy": "./owner-scoped.js"
   },
   "files": [
     "index.js",
@@ -13,7 +14,8 @@
     "transport.js",
     "README.md",
     "experimental/owner-message.js",
-    "candidate/node-proxy-connection.js"
+    "candidate/node-proxy-connection.js",
+    "owner-scoped.js"
   ],
   "engines": {
     "node": ">=22"

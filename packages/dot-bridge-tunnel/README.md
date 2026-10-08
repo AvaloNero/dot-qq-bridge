@@ -215,14 +215,28 @@ configured for an attempt, not that a connection or managed proxy guarantee was
 verified. `network_checked` remains false. A missing supported managed adapter is
 reported explicitly; an existing subscription does not make that dependency ready.
 
-For the explicit owner-message experiment, the same authenticated
-`check_lark_readiness` call may additionally return `pending_message` containing
-only the single delivered, unclaimed message's `message_id` and `reply_deadline`,
-or null. Use the existing `get_lark_message` tool to read that message. This
-read does not claim it or send a reply. Ordinary readiness output is unchanged.
+For the explicit owner-message experiment, authenticated `check_bridge_setup`
+and `check_lark_readiness` calls may additionally return `pending_message`
+containing only the current single-owner message's `message_id` and
+`reply_deadline`, or null. This field is accepted only in
+`owner_single_message_proxy` mode. Use the channel's existing `get_qq_message`
+or `get_lark_message` tool to read the message. These preflight reads neither
+claim a message nor send a reply. Ordinary readiness output is unchanged.
 Extra metadata fields are rejected; expired references become null. The exact
-older six-field Lark preflight catalog remains compatible. No message list,
-unauthenticated endpoint, callback body, or provider identity is exposed.
+older QQ and six-field Lark preflight catalogs remain compatible.
+
+The formal Lark `owner_scoped_proxy` mode may instead return `pending_messages`,
+an optional array of at most ten current subscription-bound references. Each
+contains only `message_id`, `reply_deadline` and `reply_status` (`none`, `pending`
+or `processing`). The backend verifies its current authenticated subscription,
+owner and generation; the aggregate rejects duplicates, terminal statuses,
+extra fields and mismatched modes, and removes elapsed references. The singular
+and plural fields cannot appear together. Exact old, singular-optional,
+plural-optional and combined-optional Lark catalogs are accepted; arbitrary
+schema changes fail closed. No message body, historical message listing,
+unauthenticated endpoint, callback body or provider identity is exposed by these
+preflight fields. QQ replies retain their existing queued result and three-second
+upstream deadline.
 
 A subscription error may expose `callback_policy_required` and a hostname that
 matches the validated caller URL, or an allowlisted callback-transport reason and

@@ -225,11 +225,15 @@ test('pending metadata rejects extra data and ordinary modes, and removes elapse
   for(const value of [TRANSPORT,BLOCKED_TRANSPORT]){transport=value;for(const metadata of [null,{message_id:'same-id',reply_deadline:deadline}]){pending=metadata;assert.equal((await f.tool('check_lark_readiness')).status,502);}}
 });
 
-test('Lark catalog accepts only the exact original or optional-pending output schema',async t=>{
+test('Lark catalog accepts only exact original and known optional-pending output schemas',async t=>{
   const f=await running(t);assert.equal((await f.post('tools/list')).status,200);
-  f.lark.state.transform=(v,b)=>{if(b.method==='tools/list'){const tool=v.result.tools.find(x=>x.name==='check_lark_setup');delete tool.outputSchema.properties.pending_message;}return v;};
-  assert.equal((await f.tool('check_lark_readiness')).status,200);
-  for(const mutate of [s=>{s.properties.pending_message={type:'object'};},s=>{s.required.push('pending_message');},s=>{delete s.properties.callback_transport;},s=>{s.additionalProperties=true;}]){
+  for(const omitted of [[],['pending_message'],['pending_messages'],['pending_message','pending_messages']]){
+    f.lark.state.transform=(v,b)=>{if(b.method==='tools/list'){const schema=v.result.tools.find(x=>x.name==='check_lark_setup').outputSchema;for(const name of omitted)delete schema.properties[name];}return v;};
+    assert.equal((await f.tool('check_lark_readiness')).status,200);
+  }
+  for(const mutate of [s=>{s.properties.pending_message={type:'object'};},s=>{s.required.push('pending_message');},s=>{delete s.properties.callback_transport;},s=>{s.additionalProperties=true;},
+    s=>{s.properties.pending_messages.maxItems=11;},s=>{s.properties.pending_messages.items.properties.reply_status.enum.push('sent');},s=>{s.properties.pending_messages.items.additionalProperties=true;},
+    s=>{s.properties.pending_messages.items.properties.owner={type:'string'};},s=>{s.required.push('pending_messages');}]){
     f.lark.state.transform=(v,b)=>{if(b.method==='tools/list')mutate(v.result.tools.find(x=>x.name==='check_lark_setup').outputSchema);return v;};
     assert.equal((await f.tool('check_lark_readiness')).status,502);
   }
@@ -284,4 +288,125 @@ test('ordinary reads retain their three-second upstream bound',async t=>{
   let settled=false;const pending=f.tool('get_lark_message',{message_id:'same-id'}).then(value=>{settled=true;return value;});
   await received;t.mock.timers.tick(2999);await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
   t.mock.timers.tick(1);const result=await pending;assert.equal(result.status,502);assert.equal(result.body.error.code,-32030);
+});
+
+test('QQ owner preflight exposes only a pending reference through authenticated live setup',async t=>{
+  const f=await running(t,['qq']),deadline=new Date(Date.now()+60000).toISOString();
+  const ordinary=await f.tool('check_bridge_setup');assert.equal(ordinary.status,200);assert.equal(Object.hasOwn(ordinary.body.result.structuredContent,'pending_message'),false);
+  f.qq.state.transform=(v,b)=>{if(b.method==='tools/call'&&b.params.name==='check_bridge_setup')Object.assign(v.result.structuredContent,{
+    callback_transport:{ready:true,mode:'owner_single_message_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false},
+    configuration_ready:true,events_discoverable:true,pending_message:{message_id:'same-id',reply_deadline:deadline}});return v;};
+  const before=f.qq.state.seen.length;
+  const denied=await f.post('tools/call',{name:'check_bridge_setup',arguments:{}},{[SERVICE_HEADER]:KEYS.lark});
+  assert.equal(denied.status,401);assert.equal(f.qq.state.seen.length,before);assert.equal(denied.text.includes('same-id'),false);
+  for(let i=0;i<2;i++){
+    const result=await f.tool('check_bridge_setup');assert.equal(result.status,200);
+    assert.deepEqual(result.body.result.structuredContent.pending_message,{message_id:'same-id',reply_deadline:deadline});
+    for(const privateValue of [CANARY,SECRET,'synthetic message','synthetic-path'])assert.equal(result.text.includes(privateValue),false);
+  }
+  const read=await f.tool('get_qq_message',{message_id:'same-id'});assert.equal(read.status,200);assert.equal(read.body.result.structuredContent.message_id,'same-id');
+  assert.equal(f.qq.state.replyCalls+f.qq.state.providerRequests+f.qq.state.callbackRequests,0);
+});
+
+test('QQ pending metadata rejects private fields, malformed references and other modes',async t=>{
+  const f=await running(t,['qq']),deadline=new Date(Date.now()+60000).toISOString(),reference={message_id:'same-id',reply_deadline:deadline};
+  const owner={ready:true,mode:'owner_single_message_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false};
+  let transport=owner,pending=reference,configured=true,discoverable=true;
+  f.qq.state.transform=(v,b)=>{if(b.method==='tools/call')Object.assign(v.result.structuredContent,{callback_transport:transport,configuration_ready:configured,events_discoverable:discoverable,pending_message:pending});return v;};
+  for(const bad of [{...reference,text:CANARY},{...reference,body:CANARY},{...reference,owner:CANARY},{...reference,callback_url:CALLBACK},{...reference,secret:SECRET},
+    {message_id:'x'.repeat(257),reply_deadline:deadline},{message_id:'bad\nidentifier',reply_deadline:deadline},{message_id:'same-id'},{...reference,reply_deadline:'invalid'},[reference],false]){
+    pending=bad;const result=await f.tool('check_bridge_setup');assert.equal(result.status,502);
+    for(const privateValue of [CANARY,SECRET,'synthetic-path'])assert.equal(result.text.includes(privateValue),false);
+  }
+  pending=undefined;assert.equal(Object.hasOwn((await f.tool('check_bridge_setup')).body.result.structuredContent,'pending_message'),false);
+  pending=null;assert.equal((await f.tool('check_bridge_setup')).body.result.structuredContent.pending_message,null);
+  pending={...reference,reply_deadline:new Date(Date.now()-1).toISOString()};assert.equal((await f.tool('check_bridge_setup')).body.result.structuredContent.pending_message,null);
+  pending=reference;configured=false;assert.equal((await f.tool('check_bridge_setup')).status,502);
+  configured=true;discoverable=false;assert.equal((await f.tool('check_bridge_setup')).status,502);discoverable=true;
+  for(const mode of [TRANSPORT,BLOCKED_TRANSPORT,{...owner,mode:'owner_scoped_proxy'}]){
+    transport=mode;for(const value of [null,reference]){pending=value;assert.equal((await f.tool('check_bridge_setup')).status,502);}
+  }
+});
+
+test('QQ disabled readiness rejects pending metadata even with a single-message transport claim',async t=>{
+  const f=await running(t,['lark']);
+  const ordinary=await f.tool('check_bridge_setup');assert.equal(ordinary.status,200);assert.equal(Object.hasOwn(ordinary.body.result.structuredContent,'pending_message'),false);
+  f.qq.state.transform=(v,b)=>{if(b.method==='tools/call')Object.assign(v.result.structuredContent,{callback_transport:{ready:true,mode:'owner_single_message_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false},pending_message:null});return v;};
+  assert.equal((await f.tool('check_bridge_setup')).status,502);
+});
+
+test('QQ catalog accepts only the exact old or optional single-reference schema',async t=>{
+  const f=await running(t,['qq']);assert.equal((await f.post('tools/list')).status,200);
+  f.qq.state.transform=(v,b)=>{if(b.method==='tools/list')delete v.result.tools.find(x=>x.name==='check_bridge_setup').outputSchema.properties.pending_message;return v;};
+  assert.equal((await f.tool('check_bridge_setup')).status,200);
+  for(const mutate of [s=>{s.properties.pending_message={type:'object'};},s=>{s.required.push('pending_message');},s=>{s.properties.pending_message.anyOf[1].additionalProperties=true;},
+    s=>{s.properties.pending_message.anyOf[1].properties.owner={type:'string'};},s=>{delete s.properties.callback_transport;},s=>{s.additionalProperties=true;},s=>{s.properties.pending_messages={type:'array'};}]){
+    f.qq.state.transform=(v,b)=>{if(b.method==='tools/list')mutate(v.result.tools.find(x=>x.name==='check_bridge_setup').outputSchema);return v;};
+    assert.equal((await f.tool('check_bridge_setup')).status,502);
+  }
+});
+
+test('formal Lark preflight recovers only bounded nonterminal references without message text or side effects',async t=>{
+  const f=await running(t),deadline=new Date(Date.now()+60000).toISOString();
+  const ordinary=await f.tool('check_lark_readiness');assert.equal(Object.hasOwn(ordinary.body.result.structuredContent,'pending_messages'),false);
+  const pending=['none','pending','processing'].map((reply_status,i)=>({message_id:`pending-${i}`,reply_deadline:deadline,reply_status}));
+  f.lark.state.transform=(v,b)=>{if(b.method==='tools/call'&&b.params.name==='check_lark_setup')Object.assign(v.result.structuredContent,{
+    callback_transport:{ready:true,mode:'owner_scoped_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false},delivery_configured:true,pending_messages:pending});return v;};
+  const before=f.lark.state.seen.length,denied=await f.post('tools/call',{name:'check_lark_readiness',arguments:{}},{[SERVICE_HEADER]:KEYS.qq});
+  assert.equal(denied.status,401);assert.equal(f.lark.state.seen.length,before);assert.equal(denied.text.includes('pending-0'),false);
+  for(let i=0;i<2;i++){
+    const result=await f.tool('check_lark_readiness');assert.equal(result.status,200);assert.deepEqual(result.body.result.structuredContent.pending_messages,pending);
+    assert.equal(Object.hasOwn(result.body.result.structuredContent,'pending_message'),false);assert.equal(result.body.result.structuredContent.ready_for_delivery,false);assert.equal(result.body.result.structuredContent.end_to_end_verified,false);
+    for(const privateValue of [CANARY,SECRET,'synthetic message','synthetic-path'])assert.equal(result.text.includes(privateValue),false);
+  }
+  const read=await f.tool('get_lark_message',{message_id:pending[0].message_id});assert.equal(read.status,200);assert.equal(read.body.result.structuredContent.message_id,pending[0].message_id);
+  assert.equal(f.lark.state.replyCalls+f.lark.state.callbackRequests+f.lark.state.providerRequests,0);
+});
+
+test('formal Lark pending list rejects malformed, terminal, duplicate, oversized and cross-mode metadata',async t=>{
+  const f=await running(t),deadline=new Date(Date.now()+60000).toISOString(),reference={message_id:'pending-id',reply_deadline:deadline,reply_status:'none'};
+  const owner={ready:true,mode:'owner_scoped_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false};
+  let transport=owner,pending=[reference],configured=true,single;
+  f.lark.state.transform=(v,b)=>{if(b.method==='tools/call')Object.assign(v.result.structuredContent,{callback_transport:transport,delivery_configured:configured,pending_messages:pending,pending_message:single});return v;};
+  for(const bad of [null,{},false,[null],[{...reference,text:CANARY}],[{...reference,body:CANARY}],[{...reference,owner:CANARY}],[{...reference,callback_url:CALLBACK}],[{...reference,secret:SECRET}],
+    [{...reference,reply_status:'sent'}],[{...reference,reply_status:'uncertain'}],[{...reference,reply_status:'expired'}],[{...reference,reply_status:'dead'}],[{...reference,reply_status:'cancelled'}],
+    [{...reference,message_id:''}],[{...reference,message_id:'x'.repeat(257)}],[{...reference,reply_deadline:'invalid'}],[{message_id:'pending-id',reply_deadline:deadline}],
+    [reference,{...reference}],Array.from({length:11},(_,i)=>({...reference,message_id:`pending-${i}`}))]){
+    pending=bad;const result=await f.tool('check_lark_readiness');assert.equal(result.status,502);
+    for(const privateValue of [CANARY,SECRET,'synthetic-path'])assert.equal(result.text.includes(privateValue),false);
+  }
+  pending=undefined;assert.equal(Object.hasOwn((await f.tool('check_lark_readiness')).body.result.structuredContent,'pending_messages'),false);
+  pending=[];assert.deepEqual((await f.tool('check_lark_readiness')).body.result.structuredContent.pending_messages,[]);
+  pending=Array.from({length:10},(_,i)=>({...reference,message_id:`pending-${i}`}));assert.deepEqual((await f.tool('check_lark_readiness')).body.result.structuredContent.pending_messages,pending);
+  pending=[{...reference,message_id:'elapsed-id',reply_deadline:new Date(Date.now()-1).toISOString()},reference];assert.deepEqual((await f.tool('check_lark_readiness')).body.result.structuredContent.pending_messages,[reference]);
+  configured=false;assert.equal((await f.tool('check_lark_readiness')).status,502);configured=true;
+  single=null;assert.equal((await f.tool('check_lark_readiness')).status,502);single=undefined;
+  for(const mode of [TRANSPORT,BLOCKED_TRANSPORT,{...owner,mode:'owner_single_message_proxy'}]){
+    transport=mode;for(const value of [[],[reference]]){pending=value;assert.equal((await f.tool('check_lark_readiness')).status,502);}
+  }
+});
+
+test('QQ queued replies retain the three-second upstream bound and never retry an uncertain result',async t=>{
+  const f=await running(t,['qq']);t.mock.timers.enable({apis:['setTimeout']});
+  let seen,acknowledge;const received=new Promise(resolve=>{seen=resolve;});
+  f.qq.state.response=(_req,res,body)=>{
+    if(body.method==='tools/call'){
+      f.qq.state.replyCalls++;
+      acknowledge=()=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:body.id,result:{resultType:'complete',isError:false,structuredContent:{message_id:'same-id',status:'pending',error:null}}}));};
+      seen();return;
+    }
+    const result=body.method==='server/discover'?{supportedVersions:[VERSION],capabilities:{tools:{},events:{}}}:body.method==='tools/list'?{tools:clone(expectedBackendTools('qq',true))}:{events:[clone(liveEventDefinitions.qq)]};
+    res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:body.id,result:{resultType:'complete',...result}}));
+  };
+  let settled=false;const pending=f.tool('reply_to_qq',{message_id:'same-id',text:'fixed reply'}).then(value=>{settled=true;return value;});
+  await received;t.mock.timers.tick(2999);await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
+  t.mock.timers.tick(1);const result=await pending;assert.equal(result.status,502);assert.equal(result.body.error.code,-32030);assert.equal(result.body.result,undefined);assert.equal(f.qq.state.replyCalls,1);
+  acknowledge();t.mock.timers.tick(30000);await new Promise(resolve=>setImmediate(resolve));assert.equal(f.qq.state.replyCalls,1);assert.equal(result.body.result,undefined);
+});
+
+
+test('continuous owner proxy readiness remains explicit and unverified in aggregate projection',async t=>{
+ const f=await running(t),status={ready:true,mode:'owner_scoped_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false};
+ for(const channel of ['qq','lark'])f[channel].state.transform=(v,b)=>{if(b.method==='tools/call')v.result.structuredContent.callback_transport=status;return v;};
+ for(const name of ['check_bridge_setup','check_lark_readiness']){const result=await f.tool(name);assert.equal(result.status,200);assert.deepEqual(result.body.result.structuredContent.callback_transport,status);if(name==='check_lark_readiness'){assert.equal(result.body.result.structuredContent.end_to_end_verified,false);assert.equal(result.body.result.structuredContent.ready_for_delivery,false);}}
 });

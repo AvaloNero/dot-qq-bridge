@@ -568,3 +568,16 @@ for(const [channel,acceptAnyOwnerText] of [['qq',false],['lark',false],['lark',t
  await send(TARGET,makeRequest(event));assert.equal(send.state().event_accepted,true);assert.equal(send.preflight().destination_binding,'unverified');
  await assert.rejects(send(TARGET,makeRequest(event)));assert.equal(f.connects.length,2);assert.equal(f.requests.length,2);assert.deepEqual(f.tlsNames,[HOST,HOST]);await f.settled();
 });
+
+
+test('continuous owner sender reuses native forced CONNECT/TLS for multiple authorized events without direct fallback',async t=>{
+ const {makeOwnerScopedProxyTransport}=await import('../owner-scoped.js');const {signedHeaders}=await import('../index.js');
+ const f=await fixture(t),subscriptionId='sub_'+'a'.repeat(64),expires=Date.now()+60000;
+ const sender=makeOwnerScopedProxyTransport({channel:'lark',proxyEnv:{HTTPS_PROXY:f.proxyUrl},connect:makeNodeProxyConnection({ca:goodIdentity.cert})});t.after(sender.close);
+ for(let n=1;n<=2;n++){
+  const value={eventId:'evt_'+String(n).padStart(64,'0'),name:'lark.message.created',timestamp:new Date().toISOString(),data:{message_id:`fixture-${n}`,conversation:'owner',text:`owner text ${n}`,reply_deadline:new Date(expires).toISOString()},cursor:null},body=Buffer.from(JSON.stringify(value));
+  const request={body,headers:signedHeaders({id:subscriptionId,key:Buffer.alloc(32,1)},value.eventId,body,Date.now()),hosts:[HOST],beforeConnect:()=>({principal:'tunnel-owner:dot-bridge',url:TARGET,subscription_id:subscriptionId,expires,verified:true})};
+  assert.equal((await sender(TARGET,request)).status,200);await assert.rejects(sender(TARGET,request),e=>e.code==='event_replayed');
+ }
+ await f.settled();assert.equal(f.connects.length,2);assert.equal(f.requests.length,2);assert.ok(f.tlsNames.every(name=>name===HOST));assert.equal(sender.preflight().destination_binding,'unverified');
+});

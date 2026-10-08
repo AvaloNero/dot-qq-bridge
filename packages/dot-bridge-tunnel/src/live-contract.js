@@ -87,12 +87,32 @@ function projectStatus(value,id) {
   if (value.message_id !== id || !statuses.has(value.status) || !(value.error === null || typeof value.error === 'string')) throw unavailable();
   return {message_id:id,status:value.status,error:value.error === null ? null : 'backend_reported_error'};
 }
+function projectPendingMessage(value,transport,configured) {
+  if(transport?.mode!=='owner_single_message_proxy')throw unavailable();
+  if(value===null)return null;
+  object(value,['message_id','reply_deadline'],['message_id','reply_deadline']);
+  const id=boundedString(value.message_id,256),deadline=iso(value.reply_deadline);
+  if(!configured)throw unavailable();
+  return Date.parse(deadline)>Date.now()?{message_id:id,reply_deadline:deadline}:null;
+}
+function projectPendingMessages(value,transport,configured) {
+  if(transport.mode!=='owner_scoped_proxy'||!Array.isArray(value)||value.length>10||(!configured&&value.length))throw unavailable();
+  const ids=new Set(),now=Date.now(),pending=[];
+  for(const item of value){
+    object(item,['message_id','reply_deadline','reply_status'],['message_id','reply_deadline','reply_status']);
+    const id=boundedString(item.message_id,256),deadline=iso(item.reply_deadline);
+    if(ids.has(id)||!['none','pending','processing'].includes(item.reply_status))throw unavailable();
+    ids.add(id);
+    if(Date.parse(deadline)>now)pending.push({message_id:id,reply_deadline:deadline,reply_status:item.reply_status});
+  }
+  return pending;
+}
 export function projectToolResult(call,result,live) {
   try {
     if (!record(result) || result.isError !== false || !record(result.structuredContent)) throw unavailable();
     const value=result.structuredContent;
     if (call.name === 'check_bridge_setup') {
-      object(value,['configuration_ready','events_discoverable','missing_settings','callback_hostname','callback_policy','qq_api_profile','network_checked','next_step','callback_transport'],['configuration_ready','events_discoverable','missing_settings','callback_hostname','callback_policy','qq_api_profile','network_checked','next_step',...(live?['callback_transport']:[])]);
+      object(value,['configuration_ready','events_discoverable','missing_settings','callback_hostname','callback_policy','qq_api_profile','network_checked','next_step','callback_transport',...(live?['pending_message']:[])],['configuration_ready','events_discoverable','missing_settings','callback_hostname','callback_policy','qq_api_profile','network_checked','next_step',...(live?['callback_transport']:[])]);
       const transport = value.callback_transport === undefined ? undefined : projectCallbackTransportStatus(value.callback_transport);
       if (typeof value.configuration_ready !== 'boolean' || typeof value.events_discoverable !== 'boolean' ||
           (!live && (value.configuration_ready || value.events_discoverable)) || value.network_checked !== false ||
@@ -105,8 +125,9 @@ export function projectToolResult(call,result,live) {
         hostname=callbackUrl(call.arguments.callback_url).hostname;
         if (value.callback_hostname !== hostname || !['blocked','allowlisted'].includes(value.callback_policy)) throw unavailable();
       }
+      const pending=Object.hasOwn(value,'pending_message')?projectPendingMessage(value.pending_message,transport,value.configuration_ready&&value.events_discoverable):undefined;
       return {configuration_ready:value.configuration_ready,events_discoverable:value.events_discoverable,missing_settings:[...value.missing_settings],
-        callback_hostname:hostname,callback_policy:value.callback_policy,qq_api_profile:value.qq_api_profile,network_checked:false,...(transport?{callback_transport:transport}:{}),
+        callback_hostname:hostname,callback_policy:value.callback_policy,qq_api_profile:value.qq_api_profile,network_checked:false,...(transport?{callback_transport:transport}:{}),...(pending===undefined?{}:{pending_message:pending}),
         next_step:live ? 'Local configuration check only. Callback trust and message delivery are validated by the selected backend; no destination was approved by this check.' :
           'Readiness-only connection verified. QQ provider configuration and end-to-end message delivery remain unverified.'};
     }
@@ -158,23 +179,14 @@ export function projectUpstreamError(value,params,{method,channel}={}) {
 export function projectLarkPreflight(call,result) {
   try {
     if(!record(result)||result.isError!==false)throw unavailable();const s=result.structuredContent;
-    object(s,['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport','pending_message'],['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport']);
+    object(s,['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport','pending_message','pending_messages'],['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport']);
     const transport=projectCallbackTransportStatus(s.callback_transport);
     if(typeof s.binding_ready!=='boolean'||typeof s.delivery_configured!=='boolean'||(s.delivery_configured&&!s.binding_ready)||s.network_checked!==false||!['not_provided','invalid','not_allowlisted','allowlisted'].includes(s.callback_policy))throw unavailable();
     if(call.arguments.callback_url===undefined){if(s.callback_hostname!==null||s.callback_policy!=='not_provided')throw unavailable();}
     else {const host=callbackUrl(call.arguments.callback_url).hostname;if(s.callback_hostname!==host||!['not_allowlisted','allowlisted'].includes(s.callback_policy))throw unavailable();}
-    let pending;
-    if(Object.hasOwn(s,'pending_message')) {
-      if(transport.mode!=='owner_single_message_proxy')throw unavailable();
-      pending=null;
-      if(s.pending_message!==null) {
-        object(s.pending_message,['message_id','reply_deadline'],['message_id','reply_deadline']);
-        const id=boundedString(s.pending_message.message_id,256),deadline=iso(s.pending_message.reply_deadline);
-        if(!s.binding_ready||!s.delivery_configured)throw unavailable();
-        if(Date.parse(deadline)>Date.now())pending={message_id:id,reply_deadline:deadline};
-      }
-    }
+    const pending=Object.hasOwn(s,'pending_message')?projectPendingMessage(s.pending_message,transport,s.binding_ready&&s.delivery_configured):undefined;
+    const pendingMessages=Object.hasOwn(s,'pending_messages')?projectPendingMessages(s.pending_messages,transport,s.binding_ready&&s.delivery_configured):undefined;
     return {authenticated_mcp_reachable:true,readiness_catalog_only:false,provider_network_checked:false,ready_for_delivery:false,end_to_end_verified:false,
-      callback_hostname:s.callback_hostname,callback_policy:s.callback_policy,binding_ready:s.binding_ready,delivery_configured:s.delivery_configured,network_checked:false,callback_transport:transport,...(pending===undefined?{}:{pending_message:pending})};
+      callback_hostname:s.callback_hostname,callback_policy:s.callback_policy,binding_ready:s.binding_ready,delivery_configured:s.delivery_configured,network_checked:false,callback_transport:transport,...(pending===undefined?{}:{pending_message:pending}),...(pendingMessages===undefined?{}:{pending_messages:pendingMessages})};
   }catch{throw unavailable();}
 }

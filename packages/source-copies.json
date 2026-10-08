@@ -6,8 +6,8 @@
       "package": "dot-bridge-transport",
       "file": "README.md",
       "source_sha256": "a91e9845aadff13984b0014d15f27108820954fb8d68d92ea2f79114babdb192",
-      "packaged_sha256": "c1349043becddc586dee3e85e86033f0805dc4d15c1d15c5d4a9f430880074fb",
-      "adaptation": "Document accurate lifecycle status, authenticated renewable waiting and caller-owned durable restore without budget replenishment."
+      "packaged_sha256": "c54046337e61bb2542660fe8337409ff77f5a74482121fbfad56c5999497a2ae",
+      "adaptation": "Document explicit continuous owner snapshot authority, bounded no-replay attempts, durable Store responsibilities and unverified proxy destination."
     },
     {
       "package": "dot-bridge-transport",
@@ -20,15 +20,15 @@
       "package": "dot-bridge-transport",
       "file": "package.json",
       "source_sha256": "afda155fbc6a815ca415c4068290e0b0538a370eba4b412674010831efa85a0a",
-      "packaged_sha256": "2c2aff3642a265614edc50a7931c153d81ede7c1a9516cee0a7aac3f889f25df",
-      "adaptation": "Publish only the default API and the explicit owner-message subpath with its complete native-core import closure."
+      "packaged_sha256": "77623df9fc5c3b144ee5cc6f69e9f353d365177ed346e82ff5eca4d45b53e466",
+      "adaptation": "Publish the explicit owner-scoped proxy subpath with the unchanged native-core closure; standard and single-message exports remain distinct."
     },
     {
       "package": "dot-bridge-transport",
       "file": "status.js",
       "source_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
-      "packaged_sha256": "5b1c36d083e98e7f3777823db53dbcafc12187688976006b964453641ff6df3b",
-      "adaptation": "Keep unverified owner lifecycle blocked states distinct from ordinary proxy-policy readiness; require configured proxy and no network proof."
+      "packaged_sha256": "80de2c03bab9f8308186ae7203c2013e591f88ee3fcf5531ac36f71d2a965e3d",
+      "adaptation": "Add truthful owner_scoped_proxy dependency readiness with unverified destination and no network proof; ordinary proxy still blocked."
     },
     {
       "package": "dot-bridge-transport",
@@ -49,15 +49,15 @@
       "package": "dot-bridge-transport",
       "file": "transport.js",
       "source_sha256": "12c0667e38460c7ffbf6f590233ca5bbce123f6c5d10eeb0e5b646d4dfd260a8",
-      "packaged_sha256": "f45307afc902ba13121ebc473c8672c5071ce665b0958c8a6c9e42f8fdcf6f72",
-      "adaptation": "Ordinary proxy callbacks remain fail-closed even with a callable legacy managed adapter."
+      "packaged_sha256": "6ab74d0fbe51e8554b9c8ae89d349252c0c84ab842cd04c0a9d623e2df53d642",
+      "adaptation": "Expose fixed no-attempt/replay/capacity/uncertain error codes for explicit owner-scoped policy; ordinary route unchanged."
     },
     {
       "package": "dot-bridge-tunnel",
       "file": "README.md",
       "source_sha256": "e954397b492a5c36602fb86f6c59a49044921d182d905a91db2aee58ddb32903",
-      "packaged_sha256": "54371e641b1ed2202fd8fae604503f0b12f59fd430dd8ccddea3c9196493c861",
-      "adaptation": "Document bounded Lark reply acknowledgement waiting, unchanged short read budgets and no retry or false success after an unknown outcome."
+      "packaged_sha256": "21ec64550f38976292889ff1ccf9f7d60ee5f1621628605c20a57e8e4591c987",
+      "adaptation": "Document exact owner-only QQ singular/Lark bounded plural pending references on existing setup tools with ordinary output and timeout semantics unchanged."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -77,8 +77,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/catalog.js",
       "source_sha256": "00c03f5236606871e24e38238c056e8004d269c107794a695a9ef1ca9e28dbd7",
-      "packaged_sha256": "296ece7bbe06d6a02c8a0d2f2036eaf1597047febc57d5fc0afb239b1029c139",
-      "adaptation": "Declare optional bounded pending-message reference and exact compatibility with the original Lark preflight schema."
+      "packaged_sha256": "a4d4063fbd8869bc343a4522fe562172df13293c8cfe8f99b775c12aef1b28e1",
+      "adaptation": "Declare strict optional QQ experiment and bounded Lark continuous-owner references; accept only exact known schema variants."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -98,8 +98,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/live-contract.js",
       "source_sha256": "d98f378e515d590c3673105cd9023317fcbf6643a102bafb7e329a5114f020e5",
-      "packaged_sha256": "afa27d7d605713dc547f3180c0520cb5607a2f98df98dde35f564a9b9787ca8f",
-      "adaptation": "Retain strict pending-reference projection and fixed lifecycle reasons without inferring route or delivery readiness."
+      "packaged_sha256": "2c2ec573fb80c3532ac2e1d3b27afc440963a1a5d58bf70783d108edd8cc4ac8",
+      "adaptation": "Project owner-mode pending metadata without body or identity fields; preserve unverified destination and reject malformed/private references."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -147,15 +147,15 @@
       "package": "dot-bridge-tunnel",
       "file": "test/live.test.js",
       "source_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
-      "packaged_sha256": "9b30eee599ad348b601d3346c7f2c988dbeb99ea278621e8b593919914d66352",
-      "adaptation": "Verify reply timeout boundaries, unchanged read limits, late-ack rejection, strict pending-reference/status projection and no repeated mutations."
+      "packaged_sha256": "4d0db1b41387072db4a95bef566ee731d556a0a65e456d5f3ababed7e35e83a2",
+      "adaptation": "Exercise QQ/Lark metadata mode gates, exact catalog compatibility, bounded current references, no-retry timeouts and truthful formal-owner status."
     },
     {
       "package": "dot-bridge-tunnel",
       "file": "test/sibling-contract.test.js",
       "source_sha256": "02b225bcaf3edf651794167950ce68a1f03058db3e1fded24e10de9094973a3b",
-      "packaged_sha256": "375841007e8d87e023cf6dd8194cb27b40f5d652a7c8dddc018269922f21d22b",
-      "adaptation": "Validate actual sibling catalogs and actual Lark token/reply delays beyond three seconds returning sent or uncertain once through aggregate HTTP."
+      "packaged_sha256": "2b19e4670aa4dd32fe8b12150831db9c61da165ca9a24e4b8f08b2f27d058211",
+      "adaptation": "Validate actual sibling catalogs, delayed single-message acknowledgements and formal two-message/normal-reply queued lifecycle through authenticated aggregate HTTP with inert providers."
     },
     {
       "package": "dot-bridge-transport",
@@ -182,8 +182,22 @@
       "package": "dot-bridge-transport",
       "file": "test/native-proxy.test.js",
       "source_sha256": "8c575ec1f5ab1c1e28d04950ac469e2da3ed4b908539fe3452689e4021b6361e",
-      "packaged_sha256": "0050dea9fd29519e718cfbd38e0aebb72d83d00bbfb8c51d6d377bd5138cf825",
-      "adaptation": "Offline fixed-loopback native protocol/TLS/owner-message tests; no temporary publisher or live endpoints."
+      "packaged_sha256": "22589066cff2f90a55f145d8de54bb35573b76b63b1bc0890f9af942b0cfff1e",
+      "adaptation": "Offline native CONNECT/TLS tests include multiple owner-scoped events and no repeated event attempt; final IP remains unverified."
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "owner-scoped.js",
+      "source_sha256": "1c6de21807433a5c4355cd0e4e539d089bfecc81a437e6b41ca9b9e149d7a39a",
+      "packaged_sha256": "1c6de21807433a5c4355cd0e4e539d089bfecc81a437e6b41ca9b9e149d7a39a",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-transport",
+      "file": "test/owner-scoped.test.js",
+      "source_sha256": "452a464e8f80cabac8f955919044ee172607b2c9b337c442f8e62112102fd6bf",
+      "packaged_sha256": "452a464e8f80cabac8f955919044ee172607b2c9b337c442f8e62112102fd6bf",
+      "adaptation": null
     }
   ]
 }
