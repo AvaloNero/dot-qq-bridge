@@ -6,8 +6,8 @@
       "package": "dot-bridge-transport",
       "file": "README.md",
       "source_sha256": "a91e9845aadff13984b0014d15f27108820954fb8d68d92ea2f79114babdb192",
-      "packaged_sha256": "7a073bdc7237d771cde52fe32c8a0a2936d0c44901e9dd56349f4457d262e8ab",
-      "adaptation": "Document fail-closed ordinary proxy transport and the explicit one-owner ordinary-text experiment."
+      "packaged_sha256": "d73fe8da50ab84c0f0cbd41f5b2a2d4ae9c72f2d1361448290289772e5db5368",
+      "adaptation": "Document fail-closed ordinary proxy transport and explicit one-owner ordinary-text experiment with renewable authenticated waiting and a fixed message deadline."
     },
     {
       "package": "dot-bridge-transport",
@@ -168,15 +168,15 @@
       "package": "dot-bridge-transport",
       "file": "experimental/owner-message.js",
       "source_sha256": "cf4cea6697afdeb7f7afdf6d73005cd2a3ea89cc7a35766926c08536e13babf0",
-      "packaged_sha256": "2d4534f4576aba6b9e3fbde0825d4863334ab0800ae39576154224e8c66d67ea",
-      "adaptation": "Explicit bounded owner-message experiment with ordinary-text option; no default activation or final-IP claim."
+      "packaged_sha256": "a5efcc9105a58569474d065b1429b08504f5fdbdfb901162b53803bdd57515c1",
+      "adaptation": "Explicit owner-message experiment with ordinary-text and renewable authenticated-wait options; fixed message deadline, no default activation or final-IP claim."
     },
     {
       "package": "dot-bridge-transport",
       "file": "test/owner-message.test.js",
       "source_sha256": "cb9e3c1d864603fa75dea3b5827ae915e984109cbe7f91ef6090641686171638",
-      "packaged_sha256": "cb9e3c1d864603fa75dea3b5827ae915e984109cbe7f91ef6090641686171638",
-      "adaptation": "Offline owner-message budgets, identity recognition, text modes, cancellation, and aggregate projection tests."
+      "packaged_sha256": "682b1980e43f96db7e5b45bbb341b523b602395fbcb401c34b16dba791af0258",
+      "adaptation": "Offline owner-message budgets, authenticated lease renewal, fixed message deadline, identity recognition, text modes, cancellation, and aggregate projection tests."
     },
     {
       "package": "dot-bridge-transport",

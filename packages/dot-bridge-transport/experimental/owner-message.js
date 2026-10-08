@@ -19,15 +19,24 @@ const activeStatus=()=>projectCallbackTransportStatus({ready:true,mode:'owner_si
 export function ownerMessageExperimentStatus(sender,proxyEnv){
  const entry=entries.get(sender);return entry?entry.status(proxyEnv):null;
 }
-export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperiment=false,channel,expectedText,acceptAnyOwnerText=false,deadlineMs,proxyEnv=process.env,connect,now=Date.now}={}){
- if(approvedOwnerMessageExperiment!==true||!['qq','lark'].includes(channel)||typeof acceptAnyOwnerText!=='boolean'||(!acceptAnyOwnerText&&(typeof expectedText!=='string'||!expectedText.trim()||Buffer.byteLength(expectedText)>1024||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(expectedText)))||typeof now!=='function'||(connect!==undefined&&typeof connect!=='function'))throw fail('invalid_options');
+export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperiment=false,channel,expectedText,acceptAnyOwnerText=false,waitForOwner=false,deadlineMs,proxyEnv=process.env,connect,now=Date.now}={}){
+ if(approvedOwnerMessageExperiment!==true||!['qq','lark'].includes(channel)||typeof acceptAnyOwnerText!=='boolean'||typeof waitForOwner!=='boolean'||(!acceptAnyOwnerText&&(typeof expectedText!=='string'||!expectedText.trim()||Buffer.byteLength(expectedText)>1024||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(expectedText)))||typeof now!=='function'||(connect!==undefined&&typeof connect!=='function'))throw fail('invalid_options');
  const started=now(),monoStarted=performance.now();
- if(!Number.isSafeInteger(started)||!Number.isSafeInteger(deadlineMs)||deadlineMs<=started||deadlineMs-started>900000)throw fail('invalid_options');
+ if(!Number.isSafeInteger(started)||(waitForOwner?deadlineMs!==undefined:(!Number.isSafeInteger(deadlineMs)||deadlineMs<=started||deadlineMs-started>900000)))throw fail('invalid_options');
+ let effectiveDeadline=waitForOwner?null:deadlineMs;
  const originalProxy=configuredProxy(proxyEnv);if(!originalProxy||originalProxy.authorization)throw fail('proxy_unsupported');
  const initial=fingerprint(originalProxy),scopeController=new AbortController();
  const connection=connect??makeNodeProxyConnection();
  let closed=false,busy=false,bound=null,boundSubscription=null,challengeAttempted=false,challengeVerified=false,eventAttempted=false,eventAccepted=false;
- const expired=()=>{const time=now();return !Number.isSafeInteger(time)||time<started||time>=deadlineMs||performance.now()-monoStarted>=deadlineMs-started;};
+ const remainingMs=()=>{const time=now();return effectiveDeadline===null||!Number.isSafeInteger(time)||time<started?-1:Math.min(effectiveDeadline-time,effectiveDeadline-started-(performance.now()-monoStarted));};
+ const expired=()=>remainingMs()<=0;
+ // The authenticated session owns renewal authority. This method does not
+ // authenticate a principal or relax the bound URL/subscription identity.
+ const renewLease=validUntil=>{
+  const time=now();
+  if(!waitForOwner||closed||busy||eventAttempted||(challengeAttempted&&!challengeVerified)||scopeController.signal.aborted||!Number.isSafeInteger(time)||time<started||!Number.isSafeInteger(validUntil)||!Number.isSafeInteger(validUntil-time)||!Number.isSafeInteger(validUntil-started)||validUntil<=time)throw fail('invalid_options');
+  effectiveDeadline=validUntil;
+ };
  const status=env=>{
   let selected;
   try{selected=configuredProxy(env===undefined?proxyEnv:env);if(!selected||selected.authorization||fingerprint(selected)!==initial||fingerprint(configuredProxy(proxyEnv))!==initial)return blocked('proxy_unsupported',!!selected);}
@@ -59,10 +68,10 @@ export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperim
   const active=()=>{current();if(activeSignal.aborted)throw fail(timedOut?'timeout':'aborted');if(bypassMatches(originalProxy,url.hostname))throw fail('proxy_unsupported');};
   const gate=operation=>{active();let approval;try{approval=beforeConnect();}catch{throw fail('gate_failed');}const perform=()=>{active();return operation?.();};return approval&&typeof approval.then==='function'?Promise.resolve(approval).then(perform,()=>{throw fail('gate_failed');}):perform();};
   try{
-   const remaining=Math.min(10000,deadlineMs-now(),deadlineMs-started-(performance.now()-monoStarted));if(remaining<=0)throw fail('aborted');
-   timer=setTimeout(()=>{timedOut=true;deadlineController.abort();},remaining);
+   const requestStarted=now(),requestMonoStarted=performance.now();let remaining;const armTimeout=()=>{remaining=Math.min(10000-(now()-requestStarted),10000-(performance.now()-requestMonoStarted),remainingMs());if(remaining<=0)throw fail('aborted');clearTimeout(timer);timer=setTimeout(()=>{timedOut=true;deadlineController.abort();},remaining);};
+   armTimeout();
    const interrupted=new Promise((_,reject)=>{const abort=()=>reject(fail(timedOut?'timeout':'aborted'));removeAbort=()=>activeSignal.removeEventListener('abort',abort);if(activeSignal.aborted)abort();else activeSignal.addEventListener('abort',abort,{once:true});});interrupted.catch(()=>{});
-   await Promise.race([Promise.resolve(gate()),interrupted]);active();bound??=url.href;boundSubscription??=outgoing['x-mcp-subscription-id'];if(challenge)challengeAttempted=true;else eventAttempted=true;
+   await Promise.race([Promise.resolve(gate()),interrupted]);active();bound??=url.href;boundSubscription??=outgoing['x-mcp-subscription-id'];if(challenge)challengeAttempted=true;else{eventAttempted=true;if(waitForOwner){effectiveDeadline=Math.min(effectiveDeadline,Date.parse(value.data.reply_deadline));armTimeout();}}
    const pending=Promise.resolve(connection(url,originalProxy.url,{method:'POST',headers:{...outgoing,host:url.hostname,'content-length':String(payload.length),accept:'application/json','accept-encoding':'identity'},body:payload,proxy:{url:originalProxy.url.href},beforeConnect:gate,signal:activeSignal,timeoutMs:Math.max(1,Math.floor(remaining)),maxBytes:8192}));pending.catch(()=>{});
    const response=await Promise.race([pending,interrupted]);active();await Promise.race([Promise.resolve(gate()),interrupted]);active();
    if(!response||!Number.isInteger(response.status)||response.status<200||response.status>599||!Buffer.isBuffer(response.body)||response.body.length>8192)throw fail('invalid_response');
@@ -75,7 +84,8 @@ export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperim
  };
  Object.defineProperties(send,{
   preflight:{value:()=>status()},
-  state:{value:()=>Object.freeze({channel,deadline_ms:deadlineMs,closed,expired:expired(),challenge_attempted:challengeAttempted,challenge_verified:challengeVerified,event_attempted:eventAttempted,event_accepted:eventAccepted,final_address_binding:'unverified'})},
+  renewLease:{value:renewLease},
+  state:{value:()=>Object.freeze({channel,deadline_ms:effectiveDeadline,closed,expired:expired(),challenge_attempted:challengeAttempted,challenge_verified:challengeVerified,event_attempted:eventAttempted,event_accepted:eventAccepted,final_address_binding:'unverified'})},
   close:{value:()=>{closed=true;scopeController.abort();}},
  });
  entries.set(send,{status});return send;

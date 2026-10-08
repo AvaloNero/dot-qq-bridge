@@ -48,8 +48,10 @@ transport. Its IP/CIDR extension is project policy, not native Node semantics.
 ## Explicit owner-message experiment
 
 makeOwnerMessageExperimentTransport requires approvedOwnerMessageExperiment:true,
-channel qq or lark, an absolute deadlineMs no more than 15 minutes away, and an
-existing supported proxy configuration. The code option is not proof of user
+channel qq or lark and an existing supported proxy configuration. The default
+fixed-window mode requires deadlineMs no more than 15 minutes away. An explicit
+waitForOwner:true mode instead omits deadlineMs and waits under authenticated
+subscription leases, without a separate total waiting cutoff. The code option is not proof of user
 approval. The calling session must first authenticate its subscription authority
 and verify the incoming provider owner/app/tenant/private-chat identity.
 
@@ -72,8 +74,18 @@ final address remains unverified.
 
 send.preflight() describes only the scoped experiment. send.state() exposes fixed
 lifecycle/attempt fields without URL, text or credentials; send.close() revokes it.
-Readiness remains active until expiry/close so the separately guarded fixed reply
-can complete after the event, while the sender still rejects another callback.
+In fixed-window mode, readiness remains active until expiry/close so the
+separately guarded fixed reply can complete after the event. In waitForOwner mode,
+readiness begins false. Only the authenticated calling session may call
+send.renewLease(validUntil), after checking the fixed principal, complete callback
+URL and signing secret. The transport itself does not authenticate those values.
+Waiting may resume after an expired lease, but no callback is sent while expired.
+Renewal keeps the same URL/subscription binding and cannot repeat the challenge.
+After the first event attempt, renewal is refused and readiness expires at the
+earlier of that lease and the event's original reply_deadline. The session must
+also guard provider replies, stop business ingress without an active subscription,
+and handle shutdown and renewal. Closing the sender permanently revokes it.
+Neither mode replenishes its one-event budget.
 The 10-second per-request deadline covers initial/final asynchronous authorization
 as well as transport. Cancellation is rechecked after awaited races.
 

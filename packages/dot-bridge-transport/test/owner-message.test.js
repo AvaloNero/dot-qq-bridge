@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {performance} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import {makeOwnerMessageExperimentTransport,ownerMessageExperimentStatus} from '../experimental/owner-message.js';
 import {signedHeaders,makeCallbackTransport,projectCallbackTransportStatus} from '../index.js';
@@ -115,4 +116,90 @@ test('any-owner-text does not relax channel, owner marker, body shape, URL or su
  const f=fixture('lark',{acceptAnyOwnerText:true,expectedText:undefined});await f.send(url,request(challenge()));
  for(const mutate of [v=>v.name='qq.message.created',v=>v.data.conversation='other',v=>v.data.secret='PRIVATE_CANARY',v=>v.extra='PRIVATE_CANARY']){const value=f.event();value.data.text='自由的本人文字';mutate(value);await assert.rejects(f.send(url,request(value)));}
  const value=f.event();value.data.text='自由的本人文字';await assert.rejects(f.send(url+'/changed',request(value)),e=>e.code==='host_not_allowed');const r=request(value);r.headers['x-mcp-subscription-id']='sub_'+'f'.repeat(64);await assert.rejects(f.send(url,r));assert.equal(f.calls.length,1);
+});
+
+
+test('renewable waiting is explicit and requires a fresh lease before any callback',async()=>{
+ for(const waitForOwner of [1,'true',null])assert.throws(()=>fixture('lark',{waitForOwner,deadlineMs:undefined}));
+ assert.throws(()=>fixture('lark',{waitForOwner:true}));
+ const fixed=fixture();assert.throws(()=>fixed.send.renewLease(fixed.time.value+100000));
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined});
+ assert.equal(f.send.state().deadline_ms,null);assert.equal(f.send.preflight().ready,false);
+ await assert.rejects(f.send(url,request(challenge())),e=>e.code==='aborted');assert.equal(f.calls.length,0);
+ for(const expiry of [undefined,NaN,Infinity,f.time.value,f.time.value-1,1.5])assert.throws(()=>f.send.renewLease(expiry));
+ // Authenticated subscription expiry, not the old fifteen-minute session cap.
+ f.send.renewLease(f.time.value+3600000);assert.equal(f.send.preflight().ready,true);
+ await f.send(url,request(challenge()));assert.equal(f.calls.length,1);
+});
+
+test('expired owner waiting may renew the same binding without restoring challenge or event budgets',async()=>{
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined});
+ f.send.renewLease(f.time.value+1000);await f.send(url,request(challenge()));
+ f.time.value+=1001;assert.equal(f.send.preflight().ready,false);
+ await assert.rejects(f.send(url,request(f.event())),e=>e.code==='aborted');assert.equal(f.calls.length,1);
+ f.send.renewLease(f.time.value+3600000);assert.equal(f.send.preflight().ready,true);
+ await assert.rejects(f.send(url,request(challenge())),e=>e.code==='invalid_input');
+ await assert.rejects(f.send(url+'/changed',request(f.event())),e=>e.code==='host_not_allowed');
+ const wrong=request(f.event());wrong.headers['x-mcp-subscription-id']='sub_'+'f'.repeat(64);
+ await assert.rejects(f.send(url,wrong),e=>e.code==='invalid_input');assert.equal(f.calls.length,1);
+ await f.send(url,request(f.event()));assert.equal(f.calls.length,2);
+ await assert.rejects(f.send(url,request(f.event())),e=>e.code==='invalid_input');
+});
+
+test('first owner event locks the shorter message or subscription deadline and cannot be renewed',async()=>{
+ for(const leaseDuration of [60000,3600000]){
+  const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined});
+  f.send.renewLease(f.time.value+leaseDuration);await f.send(url,request(challenge()));
+  const value=f.event(),replyDeadline=Date.parse(value.data.reply_deadline);
+  await f.send(url,request(value));const locked=Math.min(f.time.value+leaseDuration,replyDeadline);
+  assert.equal(f.send.state().deadline_ms,locked);assert.equal(f.send.preflight().ready,true);
+  assert.throws(()=>f.send.renewLease(locked+3600000),e=>e.code==='invalid_options');
+  assert.equal(f.send.state().deadline_ms,locked);
+  f.time.value=locked;assert.equal(f.send.preflight().ready,false);
+  assert.throws(()=>f.send.renewLease(locked+3600000));
+ }
+});
+
+test('waiting renewal cannot revive close or a failed challenge, mutate proxy, or race an in-flight request',async()=>{
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined});f.send.close();assert.throws(()=>f.send.renewLease(f.time.value+60000));
+ const g=fixture('lark',{waitForOwner:true,deadlineMs:undefined,connect:async()=>({status:503,body:Buffer.from('{}')})});
+ g.send.renewLease(g.time.value+60000);await g.send(url,request(challenge()));assert.throws(()=>g.send.renewLease(g.time.value+120000));
+ const h=fixture('lark',{waitForOwner:true,deadlineMs:undefined});h.send.renewLease(h.time.value+60000);
+ let release;const pending=h.send(url,request(challenge(),{beforeConnect:()=>new Promise(r=>{release=r;})}));
+ await waitFor(()=>release);assert.throws(()=>h.send.renewLease(h.time.value+120000));h.send.close();await assert.rejects(pending);release();
+ const i=fixture('lark',{waitForOwner:true,deadlineMs:undefined});i.env.HTTPS_PROXY='http://different.example.test';i.send.renewLease(i.time.value+60000);assert.equal(i.send.preflight().ready,false);
+});
+
+test('renewable waiting keeps lease and message expiry inside the total asynchronous request bound',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined});f.send.renewLease(f.time.value+5);
+ const pending=f.send(url,request(challenge(),{beforeConnect:()=>new Promise(()=>{})}));t.mock.timers.tick(6);
+ await assert.rejects(pending,e=>e.code==='timeout');assert.equal(f.calls.length,0);
+ const g=fixture('lark',{waitForOwner:true,deadlineMs:undefined,connect:async(u,p,r)=>JSON.parse(r.body).type==='verification'?{status:200,body:Buffer.from(JSON.stringify({challenge:challenge().challenge}))}:new Promise(()=>{})});
+ g.send.renewLease(g.time.value+60000);await g.send(url,request(challenge()));
+ const event=g.event();event.data.reply_deadline=new Date(g.time.value+5).toISOString();
+ const sending=g.send(url,request(event));await waitFor(()=>g.send.state().event_attempted);t.mock.timers.tick(6);
+ await assert.rejects(sending,e=>e.code==='timeout');assert.throws(()=>g.send.renewLease(g.time.value+60000));
+});
+
+
+test('locking an owner message deadline never restarts the ten-second request budget',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined,connect:async(u,p,r)=>JSON.parse(r.body).type==='verification'?{status:200,body:Buffer.from(JSON.stringify({challenge:challenge().challenge}))}:new Promise(()=>{})});
+ f.send.renewLease(f.time.value+60000);await f.send(url,request(challenge()));
+ let release;const sending=f.send(url,request(f.event(),{beforeConnect:()=>new Promise(resolve=>{release=resolve;})}));
+ await waitFor(()=>release);f.time.value+=9000;t.mock.timers.tick(9000);release();
+ await waitFor(()=>f.send.state().event_attempted);t.mock.timers.tick(1001);
+ await assert.rejects(sending,e=>e.code==='timeout');
+});
+
+
+test('renewing the same absolute lease cannot reset its monotonic expiry',t=>{
+ let monotonic=0;t.mock.method(performance,'now',()=>monotonic);
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined}),expiry=f.time.value+1000;
+ f.send.renewLease(expiry);assert.equal(f.send.preflight().ready,true);
+ // A stalled or adjusted wall clock does not make the old absolute lease new.
+ monotonic=1001;assert.equal(f.send.preflight().ready,false);
+ f.send.renewLease(expiry);assert.equal(f.send.preflight().ready,false);
+ f.send.renewLease(f.time.value+60000);assert.equal(f.send.preflight().ready,true);
 });
