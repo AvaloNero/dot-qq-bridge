@@ -207,6 +207,15 @@ configured for an attempt, not that a connection or managed proxy guarantee was
 verified. `network_checked` remains false. A missing supported managed adapter is
 reported explicitly; an existing subscription does not make that dependency ready.
 
+For the explicit owner-message experiment, the same authenticated
+`check_lark_readiness` call may additionally return `pending_message` containing
+only the single delivered, unclaimed message's `message_id` and `reply_deadline`,
+or null. Use the existing `get_lark_message` tool to read that message. This
+read does not claim it or send a reply. Ordinary readiness output is unchanged.
+Extra metadata fields are rejected; expired references become null. The exact
+older six-field Lark preflight catalog remains compatible. No message list,
+unauthenticated endpoint, callback body, or provider identity is exposed.
+
 A subscription error may expose `callback_policy_required` and a hostname that
 matches the validated caller URL, or an allowlisted callback-transport reason and
 its strictly validated status object. Other backend error data and exception text

@@ -3,7 +3,7 @@ import { TextDecoder } from 'node:util';
 import { VERSION, SERVICE_HEADER, metadata, loopback, object } from './common.js';
 import { validateConfig } from './config.js';
 import { canonicalKey } from './auth.js';
-import { expectedBackendTools, liveEventDefinitions, sameSchema } from './catalog.js';
+import { expectedBackendTools, liveEventDefinitions, sameSchema, matchesBackendOutputSchema } from './catalog.js';
 import { record, unavailable, enabled, validateToolCall, validateEventCall, projectToolResult, projectSubscription, projectUpstreamError, projectLarkPreflight } from './live-contract.js';
 const MAX_RESPONSE = 32768, MAX_REQUEST = 32768;
 const empty = value => record(value) && Object.keys(value).length === 0;
@@ -59,7 +59,7 @@ export function createUpstreamClient(input, keys, { approvedLive = false } = {})
     const catalog=await call(channel,'tools/list'),expected=expectedBackendTools(channel,live);
     if(!Array.isArray(catalog.tools)||catalog.tools.length!==expected.length||new Set(catalog.tools.map(t=>t?.name)).size!==expected.length)throw unavailable();
     for(const tool of catalog.tools){const target=expected.find(x=>x.name===tool?.name);if(!target)throw unavailable();
-      if(live && (!sameSchema(tool.inputSchema,target.inputSchema)||!sameSchema(tool.outputSchema,target.outputSchema)||!sameSchema(tool.annotations,target.annotations)))throw unavailable();}
+      if(live && (!sameSchema(tool.inputSchema,target.inputSchema)||!matchesBackendOutputSchema(channel,tool.name,tool.outputSchema,target.outputSchema)||!sameSchema(tool.annotations,target.annotations)))throw unavailable();}
     const events=await call(channel,'events/list');
     if(!Array.isArray(events.events)||events.events.length!==(live?1:0)||[catalog,events].some(v=>Object.hasOwn(v,'nextCursor')&&v.nextCursor!==null))throw unavailable();
     if(live){const e=events.events[0],target=liveEventDefinitions[channel];if(!record(e)||e.name!==target.name||!sameSchema(e.delivery,target.delivery)||!sameSchema(e.inputSchema,target.inputSchema)||!sameSchema(e.payloadSchema,target.payloadSchema))throw unavailable();}

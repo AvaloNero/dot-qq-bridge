@@ -158,12 +158,23 @@ export function projectUpstreamError(value,params,{method,channel}={}) {
 export function projectLarkPreflight(call,result) {
   try {
     if(!record(result)||result.isError!==false)throw unavailable();const s=result.structuredContent;
-    object(s,['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport'],['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport']);
+    object(s,['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport','pending_message'],['callback_hostname','callback_policy','binding_ready','delivery_configured','network_checked','callback_transport']);
     const transport=projectCallbackTransportStatus(s.callback_transport);
     if(typeof s.binding_ready!=='boolean'||typeof s.delivery_configured!=='boolean'||(s.delivery_configured&&!s.binding_ready)||s.network_checked!==false||!['not_provided','invalid','not_allowlisted','allowlisted'].includes(s.callback_policy))throw unavailable();
     if(call.arguments.callback_url===undefined){if(s.callback_hostname!==null||s.callback_policy!=='not_provided')throw unavailable();}
     else {const host=callbackUrl(call.arguments.callback_url).hostname;if(s.callback_hostname!==host||!['not_allowlisted','allowlisted'].includes(s.callback_policy))throw unavailable();}
+    let pending;
+    if(Object.hasOwn(s,'pending_message')) {
+      if(transport.mode!=='owner_single_message_proxy')throw unavailable();
+      pending=null;
+      if(s.pending_message!==null) {
+        object(s.pending_message,['message_id','reply_deadline'],['message_id','reply_deadline']);
+        const id=boundedString(s.pending_message.message_id,256),deadline=iso(s.pending_message.reply_deadline);
+        if(!s.binding_ready||!s.delivery_configured)throw unavailable();
+        if(Date.parse(deadline)>Date.now())pending={message_id:id,reply_deadline:deadline};
+      }
+    }
     return {authenticated_mcp_reachable:true,readiness_catalog_only:false,provider_network_checked:false,ready_for_delivery:false,end_to_end_verified:false,
-      callback_hostname:s.callback_hostname,callback_policy:s.callback_policy,binding_ready:s.binding_ready,delivery_configured:s.delivery_configured,network_checked:false,callback_transport:transport};
+      callback_hostname:s.callback_hostname,callback_policy:s.callback_policy,binding_ready:s.binding_ready,delivery_configured:s.delivery_configured,network_checked:false,callback_transport:transport,...(pending===undefined?{}:{pending_message:pending})};
   }catch{throw unavailable();}
 }

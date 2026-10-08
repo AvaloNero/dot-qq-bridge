@@ -86,3 +86,54 @@ test('synthetic actual sibling live catalogs and pending-callback preflight; no 
   for(const channel of ['qq','lark']){const result=await post('events/subscribe',{name:`${channel}.message.created`,arguments:{conversation:'owner'},delivery:{mode:'webhook',url:callback,secret:'whsec_'+Buffer.alloc(32,106).toString('base64')},ttlMs:60000});assert.equal(result.status,403);assert.deepEqual(result.body.error.data,{reason:'callback_policy_required',callback_hostname:'callback.example.test'});assert.equal(JSON.stringify(result).includes('private-path'),false);}
   assert.equal(requests,0);assert.equal(wsStarts,0);
 });
+
+test('actual owner Lark event can recover its pending ID through aggregate readiness and complete one reply', {skip:!available}, async t=>{
+  const dir=privateMkdtempSync(path.join(os.tmpdir(),'aggregate-owner-recovery-'));fixtureChmodSync(dir,0o700);cleanupPrivateFixture(t,dir);
+  const keys=[111,112,113].map(value=>Buffer.alloc(32,value).toString('base64url'));
+  const files=keys.map((value,i)=>{const file=path.join(dir,`key-${i}`);fs.writeFileSync(file,value,{mode:0o600});return file;});
+  const {createApp:createQq}=await import(qqSource),{readConfig:readQq}=await import(new URL('config.js',sibling('dot-qq-bridge')));
+  const {readTunnelReadinessConfig}=await import(new URL('config.js',sibling('dot-lark-bridge')));
+  const {createLarkOwnerMessageSession}=await import(new URL('owner-message-session.js',sibling('dot-lark-bridge')));
+  const {createOwnerMessageRuntime}=await import(new URL('owner-message-runtime.js',sibling('dot-lark-bridge')));
+  const {makeOwnerMessageExperimentTransport,ownerMessageExperimentStatus}=await import('../../dot-bridge-transport/experimental/owner-message.js');
+  const env={AUTH_MODE:'tunnel-service',BRIDGE_MODE:'tunnel',TUNNEL_SERVICE_OWNER_ID:OWNER,QQ_TRANSPORT:'disabled',LARK_TRANSPORT:'disabled'};
+  const qq=createQq({...readQq({...env,TUNNEL_SERVICE_KEY_FILE:files[1]}),dbPath:':memory:',storageKey:Buffer.alloc(32,114).toString('base64')},{worker:false,send:async()=>{throw Error('No QQ provider request');}});
+  beforeFixtureCleanup(t,()=>qq.close());const qa=await qq.listen(0);
+  const credentials={version:1,status:'paired',appId:'cli_0123456789abcdef',appSecret:'synthetic-app-secret',tenantKey:'tenant',ownerOpenId:'owner',ownerChatId:'chat'};
+  const proxyEnv={HTTPS_PROXY:'http://proxy.example:8080'},text='Synthetic owner message for ID recovery',fixedReply='synthetic fixed reply';
+  let dispatcher,callbacks=0,replies=0;
+  const transport=makeOwnerMessageExperimentTransport({approvedOwnerMessageExperiment:true,channel:'lark',acceptAnyOwnerText:true,waitForOwner:true,proxyEnv,connect:async(_u,_p,r)=>{
+    await r.beforeConnect();callbacks++;const body=JSON.parse(r.body);return{status:200,body:Buffer.from(JSON.stringify(body.type==='verification'?{challenge:body.challenge}:{}))};
+  }});
+  const providerSend=async(url,options)=>{
+    await options.beforeConnect();
+    if(url.endsWith('/tenant_access_token/internal'))return{status:200,body:Buffer.from(JSON.stringify({code:0,tenant_access_token:'synthetic-token',expire:7200}))};
+    assert.equal(url,'https://open.feishu.cn/open-apis/im/v1/messages/fixture-message/reply');
+    assert.equal(JSON.parse(JSON.parse(options.body).content).text,fixedReply);replies++;
+    return{status:200,body:Buffer.from(JSON.stringify({code:0,data:{message_id:'fixture-reply',chat_id:'chat'}}))};
+  };
+  const session=createLarkOwnerMessageSession({credentials,expectedAppId:credentials.appId,acceptAnyOwnerText:true,fixedReply,waitForOwner:true,authenticatedCallbackDiscovery:true,callbackTransport:transport,recognizeTransport:ownerMessageExperimentStatus,proxyEnv,providerSend});
+  const authConfig={...readTunnelReadinessConfig({...env,TUNNEL_SERVICE_KEY_FILE:files[2]}),host:'127.0.0.1',port:0};
+  const runtime=createOwnerMessageRuntime({approved:true,waitForOwner:true,session,authConfig,connectionConfig:{larkAppId:credentials.appId},lockDirectory:dir,providerSend,modeLock:()=>()=>{},connectionFactory:(_c,target)=>{dispatcher=target;return{async start(){},close(){},status:()=> 'connected'};}});
+  beforeFixtureCleanup(t,()=>runtime.close());const la=await runtime.start();
+  const app=createApp({host:'127.0.0.1',port:8789,owner:OWNER,ingressKeyFile:files[0],qqKeyFile:files[1],larkKeyFile:files[2],qqPort:qa.port,larkPort:la.port,operation:'live',liveChannels:['lark']},{approvedLive:true});
+  beforeFixtureCleanup(t,()=>app.close());const address=await app.listen(0);
+  const post=(method,params={},key=keys[0])=>new Promise((resolve,reject)=>{
+    const req=http.request({host:'127.0.0.1',port:address.port,path:'/mcp',method:'POST',agent:false,headers:{[SERVICE_HEADER]:key,'content-type':'application/json',accept:'application/json, text/event-stream','mcp-method':method,'mcp-protocol-version':VERSION,...(method==='tools/call'?{'mcp-name':params.name}:{})}},res=>{const chunks=[];res.on('data',x=>chunks.push(x));res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(Buffer.concat(chunks))}));});
+    req.on('error',reject);req.end(JSON.stringify({jsonrpc:'2.0',id:1,method,params:{...params,_meta:metadata()}}));
+  });
+  const call=(name,args={},key)=>post('tools/call',{name,arguments:args},key);
+  assert.equal((await call('check_lark_readiness')).status,200);assert.equal(callbacks,0);
+  const subscribed=await post('events/subscribe',{name:'lark.message.created',arguments:{conversation:'owner'},delivery:{mode:'webhook',url:'https://callback.example.test/private-fixture',secret:'whsec_'+Buffer.alloc(32,115).toString('base64')},ttlMs:60000});
+  assert.equal(subscribed.status,200);assert.equal(callbacks,1);
+  const now=Date.now();const envelope={schema:'2.0',header:{event_id:'fixture-event',event_type:'im.message.receive_v1',create_time:String(now),app_id:credentials.appId,tenant_key:'tenant'},event:{sender:{sender_id:{open_id:'owner'},sender_type:'user',tenant_key:'tenant'},message:{message_id:'fixture-message',chat_id:'chat',chat_type:'p2p',message_type:'text',create_time:String(now),content:JSON.stringify({text})}}};
+  assert.equal((await dispatcher.invoke(envelope)).outcome,'delivered');assert.equal(callbacks,2);
+  const unauthorized=await call('check_lark_readiness',{},keys[1]);assert.equal(unauthorized.status,401);assert.equal(JSON.stringify(unauthorized.body).includes('fixture-message'),false);
+  const recovered=await call('check_lark_readiness');assert.equal(recovered.status,200);
+  const pending=recovered.body.result.structuredContent.pending_message;assert.equal(pending.message_id,'fixture-message');assert.ok(Date.parse(pending.reply_deadline)>Date.now());
+  const metadataText=JSON.stringify(recovered.body);for(const privateValue of [text,'synthetic-token','synthetic-app-secret','private-fixture'])assert.equal(metadataText.includes(privateValue),false);
+  assert.deepEqual((await call('check_lark_readiness')).body.result.structuredContent.pending_message,pending);assert.equal(replies,0);
+  const read=await call('get_lark_message',{message_id:pending.message_id});assert.equal(read.status,200);assert.equal(read.body.result.structuredContent.text,text);
+  const reply=await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply});assert.equal(reply.status,200);assert.equal(reply.body.result.structuredContent.status,'sent');assert.equal(replies,1);
+  assert.notEqual((await call('reply_to_lark',{message_id:pending.message_id,text:fixedReply})).status,200);assert.equal(replies,1);assert.equal(callbacks,2);
+});

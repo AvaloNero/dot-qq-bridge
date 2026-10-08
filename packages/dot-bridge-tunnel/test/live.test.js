@@ -192,3 +192,45 @@ test('CLI live mode requires explicit operator flag before any key file is read'
   const f=fixture(t);const child=spawn(process.execPath,['src/main.js'],{cwd:new URL('..',import.meta.url),env:{PATH:process.env.PATH,...f.env,TUNNEL_SERVICE_OPERATION:'live',TUNNEL_LIVE_CHANNELS:'qq',TUNNEL_SERVICE_KEY_FILE:'/does-not-exist/ingress'},stdio:['ignore','pipe','pipe']});
   let output='';child.stdout.on('data',x=>output+=x);child.stderr.on('data',x=>output+=x);const code=await new Promise(resolve=>child.once('exit',resolve));assert.equal(code,1);assert.equal(output.includes('started'),false);assert.equal(output.includes('/does-not-exist'),false);
 });
+
+
+test('owner readiness recovers only the single pending message reference through the existing read tool',async t=>{
+  const f=await running(t),deadline=new Date(Date.now()+60000).toISOString();
+  const ordinary=await f.tool('check_lark_readiness');assert.equal(Object.hasOwn(ordinary.body.result.structuredContent,'pending_message'),false);
+  f.lark.state.transform=(v,b)=>{if(b.method==='tools/call'&&b.params.name==='check_lark_setup')Object.assign(v.result.structuredContent,{
+    callback_transport:{ready:true,mode:'owner_single_message_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false},
+    delivery_configured:true,pending_message:{message_id:'same-id',reply_deadline:deadline}});return v;};
+  const result=await f.tool('check_lark_readiness');assert.equal(result.status,200);
+  assert.deepEqual(result.body.result.structuredContent.pending_message,{message_id:'same-id',reply_deadline:deadline});
+  assert.equal(result.body.result.structuredContent.end_to_end_verified,false);assert.equal(result.body.result.structuredContent.ready_for_delivery,false);
+  assert.equal(result.text.includes(CANARY),false);assert.equal(result.text.includes(SECRET),false);
+  const message=await f.tool('get_lark_message',{message_id:result.body.result.structuredContent.pending_message.message_id});
+  assert.equal(message.status,200);assert.equal(message.body.result.structuredContent.message_id,'same-id');
+  assert.equal(f.lark.state.replyCalls+f.lark.state.providerRequests+f.lark.state.callbackRequests,0);
+});
+
+test('pending metadata rejects extra data and ordinary modes, and removes elapsed references',async t=>{
+  const f=await running(t),deadline=new Date(Date.now()+60000).toISOString();
+  const owner={ready:true,mode:'owner_single_message_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false};
+  let transport=owner,pending={message_id:'same-id',reply_deadline:deadline};
+  f.lark.state.transform=(v,b)=>{if(b.method==='tools/call')Object.assign(v.result.structuredContent,{callback_transport:transport,delivery_configured:true,pending_message:pending});return v;};
+  for(const bad of [{...pending,text:CANARY},{...pending,owner:CANARY},{...pending,callback_url:CALLBACK},{...pending,secret:SECRET},{message_id:'x'.repeat(257),reply_deadline:deadline},{message_id:'same-id',reply_deadline:'invalid'},[pending],undefined]){
+    pending=bad;const result=await f.tool('check_lark_readiness');
+    if(bad===undefined){assert.equal(result.status,200);assert.equal(Object.hasOwn(result.body.result.structuredContent,'pending_message'),false);}
+    else assert.equal(result.status,502);
+    assert.equal(result.text.includes(CANARY),false);assert.equal(result.text.includes(SECRET),false);assert.equal(result.text.includes('synthetic-path'),false);
+  }
+  pending=null;assert.equal((await f.tool('check_lark_readiness')).body.result.structuredContent.pending_message,null);
+  pending={message_id:'same-id',reply_deadline:new Date(Date.now()-1).toISOString()};assert.equal((await f.tool('check_lark_readiness')).body.result.structuredContent.pending_message,null);
+  for(const value of [TRANSPORT,BLOCKED_TRANSPORT]){transport=value;for(const metadata of [null,{message_id:'same-id',reply_deadline:deadline}]){pending=metadata;assert.equal((await f.tool('check_lark_readiness')).status,502);}}
+});
+
+test('Lark catalog accepts only the exact original or optional-pending output schema',async t=>{
+  const f=await running(t);assert.equal((await f.post('tools/list')).status,200);
+  f.lark.state.transform=(v,b)=>{if(b.method==='tools/list'){const tool=v.result.tools.find(x=>x.name==='check_lark_setup');delete tool.outputSchema.properties.pending_message;}return v;};
+  assert.equal((await f.tool('check_lark_readiness')).status,200);
+  for(const mutate of [s=>{s.properties.pending_message={type:'object'};},s=>{s.required.push('pending_message');},s=>{delete s.properties.callback_transport;},s=>{s.additionalProperties=true;}]){
+    f.lark.state.transform=(v,b)=>{if(b.method==='tools/list')mutate(v.result.tools.find(x=>x.name==='check_lark_setup').outputSchema);return v;};
+    assert.equal((await f.tool('check_lark_readiness')).status,502);
+  }
+});

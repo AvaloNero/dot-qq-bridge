@@ -56,8 +56,8 @@
       "package": "dot-bridge-tunnel",
       "file": "README.md",
       "source_sha256": "e954397b492a5c36602fb86f6c59a49044921d182d905a91db2aee58ddb32903",
-      "packaged_sha256": "a35fb708e1f62f99955b85e84891a1efbc53e926da53651482b4e2c502a51c82",
-      "adaptation": "existing packaged documentation; add native Windows boundary and interpreter dependency"
+      "packaged_sha256": "bebefbc620588f7aa69d478b9bd4243d98a4a19c5ce0d5cf0476fa4a6652d59e",
+      "adaptation": "Document exact optional owner pending-message recovery via existing authenticated readiness/getter tools, retaining ordinary output."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -77,8 +77,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/catalog.js",
       "source_sha256": "00c03f5236606871e24e38238c056e8004d269c107794a695a9ef1ca9e28dbd7",
-      "packaged_sha256": "00c03f5236606871e24e38238c056e8004d269c107794a695a9ef1ca9e28dbd7",
-      "adaptation": null
+      "packaged_sha256": "296ece7bbe06d6a02c8a0d2f2036eaf1597047febc57d5fc0afb239b1029c139",
+      "adaptation": "Declare optional bounded pending-message reference and exact compatibility with the original Lark preflight schema."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -98,8 +98,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/live-contract.js",
       "source_sha256": "d98f378e515d590c3673105cd9023317fcbf6643a102bafb7e329a5114f020e5",
-      "packaged_sha256": "d98f378e515d590c3673105cd9023317fcbf6643a102bafb7e329a5114f020e5",
-      "adaptation": null
+      "packaged_sha256": "c6fdf20ef68e66007667bf5b281ae8a3845792814b8b95ae4c5f822cecb88ba3",
+      "adaptation": "Project only bounded pending message ID and canonical deadline for the explicit owner experiment; reject extra data and omit elapsed references."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -133,8 +133,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/upstream.js",
       "source_sha256": "1f0f93dbd1218e6ddc85eacd5ae43bc418226a2d528ff2c7b5797a4c858851a9",
-      "packaged_sha256": "1f0f93dbd1218e6ddc85eacd5ae43bc418226a2d528ff2c7b5797a4c858851a9",
-      "adaptation": null
+      "packaged_sha256": "ca2532919bf56a8a1c213ce97845452b4089f519939c57503ebd0a6d5d984e56",
+      "adaptation": "Accept only exact current or original Lark preflight output schemas; retain all other catalog and authorization checks."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -147,15 +147,15 @@
       "package": "dot-bridge-tunnel",
       "file": "test/live.test.js",
       "source_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
-      "packaged_sha256": "3d2fd19934775dabe288ece4115b2239cd23cd8cb1136a75f5d648958b9c73c4",
-      "adaptation": "use actual Windows private fixtures and a platform-absolute unapproved-path placeholder"
+      "packaged_sha256": "bbad10c7f0b4cd9e2c1ac0381719a86b7bd89982db4ab3a591b3042470d8b3c7",
+      "adaptation": "Exercise pending-reference recovery, expired/hostile data rejection, and exact catalog compatibility through authenticated loopback aggregate HTTP."
     },
     {
       "package": "dot-bridge-tunnel",
       "file": "test/sibling-contract.test.js",
       "source_sha256": "02b225bcaf3edf651794167950ce68a1f03058db3e1fded24e10de9094973a3b",
-      "packaged_sha256": "e6bbf0c788030f892857efde1ab75f55b94c8e2a6b3a8159b1068e2e0b3906a6",
-      "adaptation": "Use current QQ checkout and optional explicit Lark source root for isolated-worktree cross-platform contract validation."
+      "packaged_sha256": "2cfbc9198d6c88c614733e92f5b7c51cd43626a44dd6fd79af2af2f2e5e6bdfb",
+      "adaptation": "Validate actual sibling catalogs and authenticated Lark owner-event recovery/read/one-reply chain with synthetic provider/callback adapters."
     },
     {
       "package": "dot-bridge-transport",
