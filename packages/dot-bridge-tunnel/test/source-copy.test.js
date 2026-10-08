@@ -31,7 +31,7 @@ const adaptations = new Set([
 
 test('packaged sources match reviewed hashes and declare layout, Windows and transport adaptations', () => {
   assert.equal(manifest.version, 1);
-  assert.equal(manifest.files.length, 28);
+  assert.equal(manifest.files.length, 30);
   const seen = new Set();
   for (const item of manifest.files) {
     assert.ok(['dot-bridge-transport', 'dot-bridge-tunnel'].includes(item.package));

@@ -1,4 +1,4 @@
-import { cleanupPrivateFixture, beforeFixtureCleanup, privateMkdtempSync, fixtureChmodSync, fixtureSymlinkSync, assertPrivateFixture } from '../packages/dot-bridge-platform/test-fixtures.js';
+import { cleanupPrivateFixture, beforeFixtureCleanup, privateMkdirSync, privateMkdtempSync, fixtureChmodSync, fixtureSymlinkSync, assertPrivateFixture } from '../packages/dot-bridge-platform/test-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -244,4 +244,12 @@ test('live restart with a persisted subscription cannot activate provider while 
   const status = servicePreflight({ ...f.env, ...proxyEnv }); assert.equal(status.ready_to_start, true);
   assert.equal(status.callback_transport.reason, 'proxy_policy_unverified');
   assert.equal(JSON.stringify({ snapshot, status }).includes('synthetic-private'), false);
+});
+
+
+test('live startup prepares the private mode-lock directory before configuration is read',t=>{
+ const f=fixture(t),locks=path.join(f.directory,'mode-locks'),env={...f.env,BRIDGE_LOCK_DIRECTORY:locks};
+ assert.throws(()=>readConfig(env));assert.equal(fs.existsSync(locks),false);assert.equal(fs.existsSync(f.env.DATABASE_PATH),false);
+ privateMkdirSync(locks,{mode:0o700});const config=readConfig(env);assert.equal(config.bridgeLockDirectory,locks);
+ const release=acquireModeLock(locks,'qq','fixture-app','tunnel');release();assert.equal(fs.existsSync(f.env.DATABASE_PATH),false);
 });

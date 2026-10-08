@@ -198,6 +198,20 @@
       "source_sha256": "452a464e8f80cabac8f955919044ee172607b2c9b337c442f8e62112102fd6bf",
       "packaged_sha256": "452a464e8f80cabac8f955919044ee172607b2c9b337c442f8e62112102fd6bf",
       "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "src/drain-main.js",
+      "source_sha256": "8c7e3bdf86420cc9ba3795bb48a40488004e9e15629d7f1dc466f172f7e74b6b",
+      "packaged_sha256": "8c7e3bdf86420cc9ba3795bb48a40488004e9e15629d7f1dc466f172f7e74b6b",
+      "adaptation": null
+    },
+    {
+      "package": "dot-bridge-tunnel",
+      "file": "test/drain-main.test.js",
+      "source_sha256": "83edb4eaf37619fe0cc119f136bba2e91a82433a7c9ef64bf6d276f805fd0ea7",
+      "packaged_sha256": "83edb4eaf37619fe0cc119f136bba2e91a82433a7c9ef64bf6d276f805fd0ea7",
+      "adaptation": null
     }
   ]
 }

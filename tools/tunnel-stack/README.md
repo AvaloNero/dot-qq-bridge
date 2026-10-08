@@ -220,3 +220,27 @@ Run these native integration tests as the intended normal Windows user. A sandbo
 token that cannot traverse that user's ancestors must fail closed; granting it
 access or weakening DACL checks is not a test setup requirement. Linux runtime
 regressions must be run separately on Linux; Windows results do not attest them.
+
+
+## Planned mixed-channel aggregate replacement
+
+When a one-message QQ process completes while a formal Lark service remains
+active, the supervisor may replace only the aggregate listener and select the
+new live channel set through the existing configuration. Use the repository
+entry `packages/dot-bridge-tunnel/src/drain-main.js --confirm-live` for that planned
+replacement. On SIGTERM/SIGINT/SIGHUP (or the existing supervised stop pipe), it
+stops accepting connections and drains accepted HTTP responses before closing
+upstream resources. It uses the same configuration, authentication and request
+bounds as the normal entry; it does not activate another provider or change
+subscriptions. Wait for its clean exit before rebinding its port. Allow the
+existing request budget, including body reading, catalog checks and subscription
+verification, rather than immediately killing the listener. Other provider and
+Tunnel processes remain the supervisor's responsibility.
+
+Prepare a new private `BRIDGE_LOCK_DIRECTORY` before reading either provider's
+live configuration or starting its child process. On POSIX a new directory must
+be owned by the service account with mode 0700; on Windows use the existing
+private-directory helper and owner ACL checks. Configuration validation checks
+that this directory already exists and intentionally does not create it. Never
+relax permissions or delete an existing lease to force startup. This ordering
+also applies to fresh per-generation mode-lock directories.
