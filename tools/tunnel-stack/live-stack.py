@@ -68,8 +68,8 @@ def project_callback_transport(value):
     if value['mode'] in expected:
         if (value['ready'],value['reason'],value['proxy_configured'],value['destination_binding']) != expected[value['mode']]: return None
     elif value['mode'] == 'blocked':
-        if value['ready'] or value['destination_binding'] != 'unverified' or value['reason'] not in {'proxy_policy_unverified','proxy_unsupported','adapter_invalid','transport_unverified'}: return None
-        if value['reason'] == 'proxy_policy_unverified' and value['proxy_configured'] is not True: return None
+        if value['ready'] or value['destination_binding'] != 'unverified' or value['reason'] not in {'proxy_policy_unverified','proxy_unsupported','adapter_invalid','transport_unverified','awaiting_subscription','scope_expired','scope_closed'}: return None
+        if value['reason'] in {'proxy_policy_unverified','awaiting_subscription','scope_expired','scope_closed'} and value['proxy_configured'] is not True: return None
         if value['reason'] in {'proxy_unsupported','adapter_invalid'} and type(value['proxy_configured']) is not bool: return None
         if value['reason'] == 'transport_unverified' and value['proxy_configured'] is not None: return None
     else: return None

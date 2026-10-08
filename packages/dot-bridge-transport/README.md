@@ -76,7 +76,11 @@ send.preflight() describes only the scoped experiment. send.state() exposes fixe
 lifecycle/attempt fields without URL, text or credentials; send.close() revokes it.
 In fixed-window mode, readiness remains active until expiry/close so the
 separately guarded fixed reply can complete after the event. In waitForOwner mode,
-readiness begins false. Only the authenticated calling session may call
+readiness begins false with reason awaiting_subscription; no lease is not an
+expired lease. An elapsed lease reports scope_expired, and explicit close reports
+scope_closed. These blocked states keep unverified destination binding and do
+not claim network checks. Ordinary proxy policy remains proxy_policy_unverified.
+Only the authenticated calling session may call
 send.renewLease(validUntil), after checking the fixed principal, complete callback
 URL and signing secret. The transport itself does not authenticate those values.
 Waiting may resume after an expired lease, but no callback is sent while expired.

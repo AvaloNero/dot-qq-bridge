@@ -6,8 +6,8 @@
       "package": "dot-bridge-transport",
       "file": "README.md",
       "source_sha256": "a91e9845aadff13984b0014d15f27108820954fb8d68d92ea2f79114babdb192",
-      "packaged_sha256": "d73fe8da50ab84c0f0cbd41f5b2a2d4ae9c72f2d1361448290289772e5db5368",
-      "adaptation": "Document fail-closed ordinary proxy transport and explicit one-owner ordinary-text experiment with renewable authenticated waiting and a fixed message deadline."
+      "packaged_sha256": "f37e6ee0cb89effdab74c4132dabd035c364a97713f680ceeb299759fa33d5dc",
+      "adaptation": "Document accurate owner waiting/expired/closed lifecycle reasons, renewable authenticated waiting and fixed message deadline."
     },
     {
       "package": "dot-bridge-transport",
@@ -27,8 +27,8 @@
       "package": "dot-bridge-transport",
       "file": "status.js",
       "source_sha256": "c71fde53993b6cf8950d1e88b71d7a364c2a3513cb36ba6804c1300926af7a93",
-      "packaged_sha256": "66171ddb209937d3923e33b0fcdf4b2b3729a7c5ce7059d884981026c99e0c3f",
-      "adaptation": "Remove unverified legacy managed readiness; add truthful scoped owner_single_message_proxy with unverified destination binding."
+      "packaged_sha256": "5b1c36d083e98e7f3777823db53dbcafc12187688976006b964453641ff6df3b",
+      "adaptation": "Keep unverified owner lifecycle blocked states distinct from ordinary proxy-policy readiness; require configured proxy and no network proof."
     },
     {
       "package": "dot-bridge-transport",
@@ -98,8 +98,8 @@
       "package": "dot-bridge-tunnel",
       "file": "src/live-contract.js",
       "source_sha256": "d98f378e515d590c3673105cd9023317fcbf6643a102bafb7e329a5114f020e5",
-      "packaged_sha256": "c6fdf20ef68e66007667bf5b281ae8a3845792814b8b95ae4c5f822cecb88ba3",
-      "adaptation": "Project only bounded pending message ID and canonical deadline for the explicit owner experiment; reject extra data and omit elapsed references."
+      "packaged_sha256": "afa27d7d605713dc547f3180c0520cb5607a2f98df98dde35f564a9b9787ca8f",
+      "adaptation": "Retain strict pending-reference projection and fixed lifecycle reasons without inferring route or delivery readiness."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -147,8 +147,8 @@
       "package": "dot-bridge-tunnel",
       "file": "test/live.test.js",
       "source_sha256": "46eff005be9dd1169da7986c42dcd2f1e17b8e0fc40ba298ff132571e941b5b4",
-      "packaged_sha256": "bbad10c7f0b4cd9e2c1ac0381719a86b7bd89982db4ab3a591b3042470d8b3c7",
-      "adaptation": "Exercise pending-reference recovery, expired/hostile data rejection, and exact catalog compatibility through authenticated loopback aggregate HTTP."
+      "packaged_sha256": "37e3cf30d13a48a73b63d8969b97c8d521d7152f4ea15d65abf620b3b38e1c76",
+      "adaptation": "Exercise pending-reference recovery, strict schema compatibility and accurate lifecycle projection through authenticated loopback aggregate HTTP."
     },
     {
       "package": "dot-bridge-tunnel",
@@ -168,15 +168,15 @@
       "package": "dot-bridge-transport",
       "file": "experimental/owner-message.js",
       "source_sha256": "cf4cea6697afdeb7f7afdf6d73005cd2a3ea89cc7a35766926c08536e13babf0",
-      "packaged_sha256": "a5efcc9105a58569474d065b1429b08504f5fdbdfb901162b53803bdd57515c1",
-      "adaptation": "Explicit owner-message experiment with ordinary-text and renewable authenticated-wait options; fixed message deadline, no default activation or final-IP claim."
+      "packaged_sha256": "a4338fff96f722eda2165fbc3c1d2d0e512daef2f34c75d88dc9915aa5083547",
+      "adaptation": "Explicit owner-message experiment with renewable waiting and accurate no-lease/expired/closed states; no default activation or final-IP claim."
     },
     {
       "package": "dot-bridge-transport",
       "file": "test/owner-message.test.js",
       "source_sha256": "cb9e3c1d864603fa75dea3b5827ae915e984109cbe7f91ef6090641686171638",
-      "packaged_sha256": "682b1980e43f96db7e5b45bbb341b523b602395fbcb401c34b16dba791af0258",
-      "adaptation": "Offline owner-message budgets, authenticated lease renewal, fixed message deadline, identity recognition, text modes, cancellation, and aggregate projection tests."
+      "packaged_sha256": "3d19a9c11341a364457c29b8c143f62fb9698e65058a3d153aae0229736637b8",
+      "adaptation": "Offline owner-message budgets, authenticated lease renewal, lifecycle reasons, fixed deadline, cancellation and projection tests."
     },
     {
       "package": "dot-bridge-transport",

@@ -13,7 +13,7 @@ const iso=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(
 // Same ordinary-text ceiling as the bridge: content is data, never authority.
 const ordinaryOwnerText=value=>typeof value==='string'&&value.length<=2000&&!!value.trim()&&Buffer.byteLength(value)<=8000&&!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)&&!/\p{Surrogate}/u.test(value);
 const fingerprint=proxy=>JSON.stringify(proxy?{url:proxy.url.href,authorization:proxy.authorization??null,noProxy:proxy.noProxy}:null);
-const blocked=(reason='proxy_policy_unverified',configured=true)=>projectCallbackTransportStatus({ready:false,mode:'blocked',reason,proxy_configured:configured,destination_binding:'unverified',network_checked:false});
+const blocked=(reason,configured=true)=>projectCallbackTransportStatus({ready:false,mode:'blocked',reason,proxy_configured:configured,destination_binding:'unverified',network_checked:false});
 const activeStatus=()=>projectCallbackTransportStatus({ready:true,mode:'owner_single_message_proxy',reason:'none',proxy_configured:true,destination_binding:'unverified',network_checked:false});
 
 export function ownerMessageExperimentStatus(sender,proxyEnv){
@@ -29,7 +29,7 @@ export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperim
  const connection=connect??makeNodeProxyConnection();
  let closed=false,busy=false,bound=null,boundSubscription=null,challengeAttempted=false,challengeVerified=false,eventAttempted=false,eventAccepted=false;
  const remainingMs=()=>{const time=now();return effectiveDeadline===null||!Number.isSafeInteger(time)||time<started?-1:Math.min(effectiveDeadline-time,effectiveDeadline-started-(performance.now()-monoStarted));};
- const expired=()=>remainingMs()<=0;
+ const expired=()=>effectiveDeadline!==null&&remainingMs()<=0;
  // The authenticated session owns renewal authority. This method does not
  // authenticate a principal or relax the bound URL/subscription identity.
  const renewLease=validUntil=>{
@@ -41,9 +41,11 @@ export function makeOwnerMessageExperimentTransport({approvedOwnerMessageExperim
   let selected;
   try{selected=configuredProxy(env===undefined?proxyEnv:env);if(!selected||selected.authorization||fingerprint(selected)!==initial||fingerprint(configuredProxy(proxyEnv))!==initial)return blocked('proxy_unsupported',!!selected);}
   catch{return blocked('proxy_unsupported',!!selected);}
-  return closed||expired()?blocked():activeStatus();
+  if(closed)return blocked('scope_closed');
+  if(effectiveDeadline===null)return blocked('awaiting_subscription');
+  return expired()?blocked('scope_expired'):activeStatus();
  };
- const current=()=>{if(closed||expired()||scopeController.signal.aborted)throw fail('aborted');if(!status().ready)throw fail('proxy_unsupported');};
+ const current=()=>{if(closed||effectiveDeadline===null||expired()||scopeController.signal.aborted)throw fail('aborted');if(!status().ready)throw fail('proxy_unsupported');};
  const send=async(raw,{method='POST',headers,body,hosts,beforeConnect,signal}={})=>{
   current();if(busy||method!=='POST'||typeof beforeConnect!=='function'||(signal!==undefined&&!(signal instanceof AbortSignal))||!Buffer.isBuffer(body)||body.length>8192)throw fail('invalid_input');
   const url=validateCallbackUrl(raw);

@@ -12,7 +12,7 @@ import { readConfig, validateConfig } from '../src/config.js';
 import { VERSION, OWNER, SERVICE_HEADER, metadata } from '../src/common.js';
 import { validateMcp } from '../src/protocol.js';
 import { expectedBackendTools, liveEventDefinitions } from '../src/catalog.js';
-import { projectSubscription, MAX_LEASE_MS } from '../src/live-contract.js';
+import { projectSubscription, projectUpstreamError, MAX_LEASE_MS } from '../src/live-contract.js';
 const KEYS={ingress:Buffer.alloc(32,91).toString('base64url'),qq:Buffer.alloc(32,92).toString('base64url'),lark:Buffer.alloc(32,93).toString('base64url')};
 const SECRET='whsec_'+Buffer.alloc(32,94).toString('base64'),CALLBACK='https://callback.example.test/synthetic-path?fixture=value',CANARY='synthetic-private-metadata-error-token';
 const TRANSPORT={ready:true,mode:'direct',reason:'none',proxy_configured:false,destination_binding:'direct_pinned',network_checked:false};
@@ -232,5 +232,21 @@ test('Lark catalog accepts only the exact original or optional-pending output sc
   for(const mutate of [s=>{s.properties.pending_message={type:'object'};},s=>{s.required.push('pending_message');},s=>{delete s.properties.callback_transport;},s=>{s.additionalProperties=true;}]){
     f.lark.state.transform=(v,b)=>{if(b.method==='tools/list')mutate(v.result.tools.find(x=>x.name==='check_lark_setup').outputSchema);return v;};
     assert.equal((await f.tool('check_lark_readiness')).status,502);
+  }
+});
+
+
+test('aggregate preserves explicit owner lifecycle reasons without claiming route or delivery readiness',async t=>{
+  const f=await running(t);
+  for(const reason of ['awaiting_subscription','scope_expired','scope_closed']){
+    const status={...BLOCKED_TRANSPORT,reason};
+    f.lark.state.transform=(v,b)=>{if(b.method==='tools/call')v.result.structuredContent.callback_transport=status;return v;};
+    const result=await f.tool('check_lark_readiness');assert.equal(result.status,200);
+    assert.deepEqual(result.body.result.structuredContent.callback_transport,status);assert.equal(result.body.result.structuredContent.ready_for_delivery,false);
+    assert.equal(result.body.result.structuredContent.end_to_end_verified,false);
+    assert.equal(Object.hasOwn(result.body.result.structuredContent,'pending_message'),false);
+    const error=projectUpstreamError({error:{code:-32015,data:{reason,callback_transport:status,secret:SECRET}}},{},{method:'events/subscribe',channel:'lark'});
+    assert.equal(error.status,503);assert.deepEqual(error.data,{reason,callback_transport:status});
+    assert.equal(JSON.stringify(error).includes(SECRET),false);
   }
 });

@@ -203,3 +203,20 @@ test('renewing the same absolute lease cannot reset its monotonic expiry',t=>{
  f.send.renewLease(expiry);assert.equal(f.send.preflight().ready,false);
  f.send.renewLease(f.time.value+60000);assert.equal(f.send.preflight().ready,true);
 });
+
+
+test('owner lifecycle status distinguishes awaiting subscription, expiry and close from proxy policy',async()=>{
+ const f=fixture('lark',{waitForOwner:true,deadlineMs:undefined});
+ const state=reason=>({ready:false,mode:'blocked',reason,proxy_configured:true,destination_binding:'unverified',network_checked:false});
+ assert.deepEqual(f.send.preflight(),state('awaiting_subscription'));assert.equal(f.send.state().expired,false);
+ await assert.rejects(f.send(url,request(challenge())),e=>e.code==='aborted');assert.equal(f.calls.length,0);
+ f.send.renewLease(f.time.value+1000);assert.equal(f.send.preflight().ready,true);
+ f.time.value+=1000;assert.deepEqual(f.send.preflight(),state('scope_expired'));assert.equal(f.send.state().expired,true);
+ f.send.renewLease(f.time.value+1000);assert.equal(f.send.preflight().ready,true);
+ f.send.close();assert.deepEqual(f.send.preflight(),state('scope_closed'));
+ for(const reason of ['awaiting_subscription','scope_expired','scope_closed']){
+  assert.deepEqual(projectCallbackTransportStatus(state(reason)),state(reason));
+  for(const change of [{ready:true},{proxy_configured:false},{proxy_configured:null},{destination_binding:'direct_pinned'},{network_checked:true},{mode:'owner_single_message_proxy'}])assert.throws(()=>projectCallbackTransportStatus({...state(reason),...change}));
+ }
+ assert.equal(makeCallbackTransport({proxyEnv:f.env}).preflight().reason,'proxy_policy_unverified');
+});

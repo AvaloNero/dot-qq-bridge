@@ -151,6 +151,11 @@ class LiveStackTests(unittest.TestCase):
             self.assertEqual(stack.project_callback_transport(value),value)
         self.assertIsNone(stack.project_callback_transport({'ready':True,'mode':'managed','reason':'none','proxy_configured':True,'destination_binding':'delegated_unverified','network_checked':False}))
         self.assertIsNone(stack.project_callback_transport({**blocked,'reason':'transport_unverified'}))
+        for reason in ('awaiting_subscription','scope_expired','scope_closed'):
+            value={**blocked,'reason':reason}
+            self.assertEqual(stack.project_callback_transport(value),value)
+            for change in ({'ready':True},{'proxy_configured':False},{'proxy_configured':None},{'network_checked':True},{'destination_binding':'direct_pinned'}):
+                self.assertIsNone(stack.project_callback_transport({**value,**change}))
         unknown={**blocked,'reason':'transport_unverified','proxy_configured':None}
         self.assertEqual(stack.project_callback_transport(unknown),unknown)
 

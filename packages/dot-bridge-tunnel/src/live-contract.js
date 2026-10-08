@@ -1,11 +1,11 @@
 // Closed protocol projection, not a reverse proxy. No provider identity is an input.
 import { isIP } from 'node:net';
 import { BridgeError, object } from './common.js';
-import { projectCallbackTransportStatus, TRANSPORT_ERROR_CODES } from '../../dot-bridge-transport/index.js';
+import { projectCallbackTransportStatus, callbackTransportStatusSchema, TRANSPORT_ERROR_CODES } from '../../dot-bridge-transport/index.js';
 export const CHANNELS = Object.freeze(['qq', 'lark']);
 export const MAX_LEASE_MS = 604800000;
 const statuses = new Set(['none','pending','processing','sent','expired','dead','cancelled','uncertain']);
-const transportReasons = new Set([...TRANSPORT_ERROR_CODES, 'transport_unverified']);
+const transportReasons = new Set([...TRANSPORT_ERROR_CODES, ...callbackTransportStatusSchema.properties.reason.enum.filter(reason=>reason!=='none')]);
 const settings = ['QQ_APP_ID','QQ_BOT_SECRET','QQ_OWNER_OPENID','MCP_OWNER_SUBJECT','AUTH_MODE','MCP_CALLBACK_ALLOWED_HOSTS'];
 export const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export const unavailable = () => new BridgeError('Local bridge request unavailable or incompatible', { status: 502, code: -32030 });
